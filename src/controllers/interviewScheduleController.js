@@ -286,11 +286,13 @@ exports.getAll = async (req, res) => {
     {
       list = await InterviewSchedule.query()
       .where({ interview_mode: mode })
+      .select('interview_schedule_id', 'interview_slot_id', 'interviewer_id', 'candidate_id', 'interview_status', 'start_time_utc', 'end_time_utc', 'interview_mode', 'meeting_link', 'meeting_type', 'created_at', 'updated_at')
       .orderBy("start_time_utc", "asc");
     }
     else{
       list = await InterviewSchedule.query()
       .where({ interview_status: "open" })
+      .select('interview_schedule_id', 'interview_slot_id', 'interviewer_id', 'candidate_id', 'interview_status', 'start_time_utc', 'end_time_utc', 'interview_mode', 'meeting_link', 'meeting_type', 'created_at', 'updated_at')
       .orderBy("start_time_utc", "asc");
     }
     

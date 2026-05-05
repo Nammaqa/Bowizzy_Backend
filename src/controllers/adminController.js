@@ -160,10 +160,11 @@ exports.getAllUsers = async (req, res) => {
         "users.last_name",
         "users.user_type",
         "users.is_interviewer_verified",
+        "users.is_verified",
         "users.created_at",
         "users.updated_at"
       )
-      .withGraphFetched('[personal_details, skills, education_details, work_experience, job_roles]')
+      .withGraphFetched('[personal_details, skills, education_details, work_experience, job_roles, bank_details]')
       .orderBy('user_id', 'asc');
 
     return res.json(list);
@@ -719,6 +720,7 @@ exports.getAcceptedInterviews = async (req, res) => {
         'interview_schedules.meeting_link',
         'interview_schedules.interview_mode',
         'interview_schedules.interview_status',
+        'interview_schedules.end_time_utc',
 
         'interview_schedules.start_time_utc as date_time',
         'candidate_user.first_name as candidate_first_name',
