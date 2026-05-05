@@ -15,7 +15,7 @@ app.use((req, res, next) => {
 
 // Middlewares
 app.use(cors({
-  origin: ["https://bowizzy.com", "http://localhost:5173", "http://localhost:5174","https://admin.bowizzy.com","https://dev.bowizzy.com","https://bowizzy-backend.vercel.app","https://bowizzy-admin-git-dev-bowizzys-projects.vercel.app/"],
+  origin: ["https://bowizzy.com", "http://localhost:5173", "http://localhost:5174","https://admin.bowizzy.com","https://dev.bowizzy.com","https://bowizzy-backend.vercel.app","https://bowizzy-admin-git-dev-bowizzys-projects.vercel.app"],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
