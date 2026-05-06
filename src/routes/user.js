@@ -5,5 +5,6 @@ const controller = require("../controllers/userController");
 
 router.get("/users/:user_id", auth, controller.getUserById);
 router.post("/users/:user_id/claim-welcome-bonus", auth, controller.claimWelcomeCredit);
+router.delete("/api/account-delete/:user_id", auth, controller.deleteAccount);
 
 module.exports = router;
