@@ -84,18 +84,18 @@ exports.startChat = async (req, res) => {
       .patch({ started: true });
 
     // Create an initial assistant greeting message
-    // const initialChat = await AiChat.query().insert({
-    //   session_id,
-    //   text: "Hi, I need to build my resume.",
-    //   file_link: null,
-    //   type: "user"
-    // });
+    const initialChat = await AiChat.query().insert({
+      session_id,
+      text: "Hi, I need to build my resume.",
+      file_link: null,
+      type: "user"
+    });
 
     return res.json({
       message: "Chat session started successfully",
       data: {
         session: updatedSession,
-        //initialMessage: initialChat
+        initialMessage: initialChat
       }
     });
   } catch (err) {
