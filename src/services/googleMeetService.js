@@ -6,16 +6,24 @@ const IMPERSONATE_USER = "contactus@wizzybox.com";
 
 async function createGoogleMeeting({ startTimeUtc }) {
   try {
-    // Load service account credentials
-    const serviceAccountPath = path.join(
-      __dirname,
-      "..",
-      "..",
-      "bowizzy-ai-assistant-84d029637a02.json"
-    );
-    const serviceAccount = JSON.parse(
-      fs.readFileSync(serviceAccountPath, "utf8")
-    );
+    // Load service account credentials from environment variable or file
+    let serviceAccount;
+    
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      // Use environment variable (for Vercel and production)
+      serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    } else {
+      // Fallback to file (for local development)
+      const serviceAccountPath = path.join(
+        __dirname,
+        "..",
+        "..",
+        "bowizzy-ai-assistant-84d029637a02.json"
+      );
+      serviceAccount = JSON.parse(
+        fs.readFileSync(serviceAccountPath, "utf8")
+      );
+    }
 
     // Create JWT client with domain-wide delegation
     const auth = new google.auth.JWT({
