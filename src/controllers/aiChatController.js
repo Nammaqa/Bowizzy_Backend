@@ -95,7 +95,7 @@ exports.startChat = async (req, res) => {
       message: "Chat session started successfully",
       data: {
         session: updatedSession,
-        initialMessage: initialChat
+        //initialMessage: initialChat
       }
     });
   } catch (err) {
