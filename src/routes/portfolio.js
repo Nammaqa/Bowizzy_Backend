@@ -3,6 +3,9 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const controller = require("../controllers/portfolioController");
 
+// Validate domain
+router.post("/portfolio/validate-domain", auth, controller.validateDomain);
+
 // Create Razorpay order for portfolio
 router.post("/portfolio/create-order", auth, controller.createOrder);
 

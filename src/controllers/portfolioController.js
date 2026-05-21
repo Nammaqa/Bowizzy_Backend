@@ -52,10 +52,43 @@ exports.createOrder = async (req, res) => {
   }
 };
 
+// VALIDATE DOMAIN
+exports.validateDomain = async (req, res) => {
+  try {
+    const { domain } = req.body;
+    const user_id = req.user.user_id;
+
+    if (!domain) {
+      return res.status(400).json({ message: "Domain is required" });
+    }
+
+    // Check if domain already exists
+    const existingPortfolio = await Portfolio.query().findOne({
+      domain
+    });
+
+    if (existingPortfolio) {
+      return res.json({
+        available: false,
+        message: "Domain already exists"
+      });
+    }
+
+    return res.json({
+      available: true,
+      message: "Domain is available"
+    });
+
+  } catch (err) {
+    console.error("Portfolio validateDomain error:", err);
+    return res.status(500).json({ message: "Domain validation failed" });
+  }
+};
+
 // CREATE PORTFOLIO PROJECT
 exports.createPortfolio = async (req, res) => {
   try {
-    const { name, description, portfolio_type, order_id, credits_used,razorpay_payment_id,razorpay_signature } = req.body;
+    const { name, description, portfolio_type, order_id, domain, credits_used,razorpay_payment_id,razorpay_signature } = req.body;
     const user_id = req.user.user_id;
 
     // Validate required fields
@@ -69,6 +102,17 @@ exports.createPortfolio = async (req, res) => {
 
     if (!order_id) {
       return res.status(400).json({ message: "Order ID is required" });
+    }
+
+    // Validate domain if provided
+    if (domain) {
+      const existingPortfolio = await Portfolio.query().findOne({
+        user_id,
+        domain
+      });
+      if (existingPortfolio) {
+        return res.status(400).json({ message: "Domain already exists for this portfolio" });
+      }
     }
 
     // Verify payment exists and belongs to user
@@ -93,6 +137,7 @@ exports.createPortfolio = async (req, res) => {
       description: description || null,
       portfolio_type,
       razorpay_order_id: order_id,
+      domain: domain || null,
       paid_amount: payment.amount,
       credits_used: credits_used ? Number(credits_used) : 0,
       status: "completed"
@@ -152,7 +197,7 @@ exports.updatePortfolio = async (req, res) => {
   try {
     const { id } = req.params;
     const user_id = req.user.user_id;
-    const { name, description, portfolio_type } = req.body;
+    const { name, description, portfolio_type, portfolio_json, domain } = req.body;
 
     const portfolio = await Portfolio.query().findOne({
       portfolio_id: id,
@@ -163,11 +208,24 @@ exports.updatePortfolio = async (req, res) => {
       return res.status(404).json({ message: "Portfolio not found" });
     }
 
+    // Validate domain if provided and different from current
+    if (domain && domain !== portfolio.domain) {
+      const existingPortfolio = await Portfolio.query().findOne({
+        user_id,
+        domain
+      });
+      if (existingPortfolio) {
+        return res.status(400).json({ message: "Domain already exists for this portfolio" });
+      }
+    }
+
     const updated = await Portfolio.query()
       .patch({
         portfolio_name: name || portfolio.portfolio_name,
         description: description !== undefined ? description : portfolio.description,
-        portfolio_type: portfolio_type || portfolio.portfolio_type
+        portfolio_type: portfolio_type || portfolio.portfolio_type,
+        portfolio_json: portfolio_json || null,
+        domain: domain !== undefined ? domain : portfolio.domain
       })
       .where({ portfolio_id: id });
 
