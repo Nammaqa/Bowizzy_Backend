@@ -17,6 +17,7 @@ router.get("/portfolio", auth, controller.getUserPortfolios);
 
 // Get portfolio by ID
 router.get("/portfolio/:id", auth, controller.getPortfolioById);
+router.get("/public-portfolio/:id", controller.getPortfolioByIdPublic);
 
 // Update portfolio
 router.put("/portfolio/:id", auth, controller.updatePortfolio);

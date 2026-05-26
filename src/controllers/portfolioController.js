@@ -88,11 +88,11 @@ exports.validateDomain = async (req, res) => {
 // CREATE PORTFOLIO PROJECT
 exports.createPortfolio = async (req, res) => {
   try {
-    const { name, description, portfolio_type, order_id, domain, credits_used,razorpay_payment_id,razorpay_signature } = req.body;
+    const { portfolio_name, description, portfolio_type, order_id, domain, credits_used,razorpay_payment_id,razorpay_signature } = req.body;
     const user_id = req.user.user_id;
 
     // Validate required fields
-    if (!name) {
+    if (!portfolio_name) {
       return res.status(400).json({ message: "Portfolio name is required" });
     }
 
@@ -133,7 +133,7 @@ exports.createPortfolio = async (req, res) => {
     // Create portfolio record
     const portfolio = await Portfolio.query().insert({
       user_id,
-      portfolio_name: name,
+      portfolio_name: portfolio_name || null,
       description: description || null,
       portfolio_type,
       razorpay_order_id: order_id,
@@ -191,13 +191,32 @@ exports.getPortfolioById = async (req, res) => {
     return res.status(500).json({ message: "Error fetching portfolio" });
   }
 };
+exports.getPortfolioByIdPublic = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const portfolio = await Portfolio.query().findOne({
+      portfolio_id: id,
+    });
+
+    if (!portfolio) {
+      return res.status(404).json({ message: "Portfolio not found" });
+    }
+
+    return res.json(portfolio);
+
+  } catch (err) {
+    console.error("Portfolio getPortfolioById error:", err);
+    return res.status(500).json({ message: "Error fetching portfolio" });
+  }
+};
 
 // UPDATE PORTFOLIO
 exports.updatePortfolio = async (req, res) => {
   try {
     const { id } = req.params;
     const user_id = req.user.user_id;
-    const { name, description, portfolio_type, portfolio_json, domain } = req.body;
+    const { portfolio_name, description, portfolio_type, portfolio_json, domain } = req.body;
 
     const portfolio = await Portfolio.query().findOne({
       portfolio_id: id,
@@ -221,7 +240,7 @@ exports.updatePortfolio = async (req, res) => {
 
     const updated = await Portfolio.query()
       .patch({
-        portfolio_name: name || portfolio.portfolio_name,
+        portfolio_name: portfolio_name || portfolio.portfolio_name,
         description: description !== undefined ? description : portfolio.description,
         portfolio_type: portfolio_type || portfolio.portfolio_type,
         portfolio_json: portfolio_json || null,

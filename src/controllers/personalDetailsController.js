@@ -127,7 +127,7 @@ const generateOTP = () => {
 };
 
 const sendOTPEmail = async (email, otp) => {
-  const mailServiceUrl = "https://bowizzy-mail-service-mzkf9n5p4-bowizzys-projects.vercel.app/api/send-email";
+  const mailServiceUrl = "https://bowizzy-mail-service.vercel.app/api/send-email";
   const bypassHeader = "clRAc3bjRwnrpqGZgac1fy7zaDUmwp7u";
 
   const htmlContent = `
