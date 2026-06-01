@@ -59,8 +59,45 @@ exports.deleteAccount = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const deletedEmail = user.email ? `deleted_${user.email}` : null;
-    const deletedPhone = user.phone_number ? `deleted_${user.phone_number}` : null;
+    // Handle email deletion with counter
+    let deletedEmail = null;
+    if (user.email) {
+      if (user.email.startsWith("deleted_")) {
+        // Already deleted, add a counter
+        const match = user.email.match(/^deleted_(\d+)_/);
+        if (match) {
+          const counter = parseInt(match[1]) + 1;
+          const originalEmail = user.email.replace(/^deleted_\d+_/, "");
+          deletedEmail = `deleted_${counter}_${originalEmail}`;
+        } else {
+          // First re-deletion
+          const originalEmail = user.email.replace(/^deleted_/, "");
+          deletedEmail = `deleted_1_${originalEmail}`;
+        }
+      } else {
+        deletedEmail = `deleted_${user.email}`;
+      }
+    }
+
+    // Handle phone deletion with counter
+    let deletedPhone = null;
+    if (user.phone_number) {
+      if (user.phone_number.startsWith("deleted_")) {
+        // Already deleted, add a counter
+        const match = user.phone_number.match(/^deleted_(\d+)_/);
+        if (match) {
+          const counter = parseInt(match[1]) + 1;
+          const originalPhone = user.phone_number.replace(/^deleted_\d+_/, "");
+          deletedPhone = `deleted_${counter}_${originalPhone}`;
+        } else {
+          // First re-deletion
+          const originalPhone = user.phone_number.replace(/^deleted_/, "");
+          deletedPhone = `deleted_1_${originalPhone}`;
+        }
+      } else {
+        deletedPhone = `deleted_${user.phone_number}`;
+      }
+    }
 
     await User.query(trx).findById(user_id).patch({
       is_user_deleted: true,
