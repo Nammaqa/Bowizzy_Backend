@@ -2,6 +2,7 @@ const razorpay = require("../utils/razorpay");
 const crypto = require("crypto");
 const Portfolio = require("../models/Portfolio");
 const UserPayment = require("../models/UserPayment");
+const User = require("../models/User");
 
 // CREATE RAZORPAY ORDER FOR PORTFOLIO
 exports.createOrder = async (req, res) => {
@@ -18,6 +19,21 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ message: "Portfolio type is required" });
     }
 
+    // Check if user has enough credits
+    if (credits_used && Number(credits_used) > 0) {
+      const user = await User.query().findById(user_id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      if (user.credits < Number(credits_used)) {
+        return res.status(400).json({
+          message: "Insufficient credits",
+          available_credits: user.credits,
+          credits_requested: Number(credits_used)
+        });
+      }
+    }
+
     // Razorpay needs paise
     const paise = Math.round(Number(amount) * 100);
 
@@ -31,7 +47,7 @@ exports.createOrder = async (req, res) => {
     await UserPayment.query().insert({
       user_id,
       razorpay_order_id: order.id,
-      razorpay_payment_id:order.payments ? order.payments[0]?.id : null,
+      razorpay_payment_id: order.payments ? order.payments[0]?.id : null,
       amount: Number(amount),
       currency: "INR",
       status: "created",
@@ -43,7 +59,7 @@ exports.createOrder = async (req, res) => {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      order:order
+      order
     });
 
   } catch (err) {
@@ -63,9 +79,7 @@ exports.validateDomain = async (req, res) => {
     }
 
     // Check if domain already exists
-    const existingPortfolio = await Portfolio.query().findOne({
-      domain
-    });
+    const existingPortfolio = await Portfolio.query().findOne({ domain });
 
     if (existingPortfolio) {
       return res.json({
@@ -88,8 +102,19 @@ exports.validateDomain = async (req, res) => {
 // CREATE PORTFOLIO PROJECT
 exports.createPortfolio = async (req, res) => {
   try {
-    const { portfolio_name, description, portfolio_type, order_id, domain, credits_used,razorpay_payment_id,razorpay_signature } = req.body;
+    const {
+      portfolio_name,
+      description,
+      portfolio_type,
+      order_id,
+      domain,
+      credits_used,
+      razorpay_payment_id,
+      razorpay_signature
+    } = req.body;
     const user_id = req.user.user_id;
+
+    console.log("createPortfolio request body:", req.body);
 
     // Validate required fields
     if (!portfolio_name) {
@@ -106,10 +131,7 @@ exports.createPortfolio = async (req, res) => {
 
     // Validate domain if provided
     if (domain) {
-      const existingPortfolio = await Portfolio.query().findOne({
-        user_id,
-        domain
-      });
+      const existingPortfolio = await Portfolio.query().findOne({ user_id, domain });
       if (existingPortfolio) {
         return res.status(400).json({ message: "Domain already exists for this portfolio" });
       }
@@ -124,6 +146,21 @@ exports.createPortfolio = async (req, res) => {
     if (!payment) {
       return res.status(400).json({ message: "Payment not found or invalid" });
     }
+
+    // Re-validate credits at creation time (guard against race conditions)
+    const creditsToDeduct = credits_used ? Number(credits_used) : 0;
+    if (creditsToDeduct > 0) {
+      const user = await User.query().findById(user_id);
+      if (!user || user.credits < creditsToDeduct) {
+        return res.status(400).json({
+          message: "Insufficient credits",
+          available_credits: user?.credits ?? 0,
+          credits_requested: creditsToDeduct
+        });
+      }
+    }
+
+    // Update payment record
     await UserPayment.query().patch({
       razorpay_payment_id,
       razorpay_signature,
@@ -139,9 +176,17 @@ exports.createPortfolio = async (req, res) => {
       razorpay_order_id: order_id,
       domain: domain || null,
       paid_amount: payment.amount,
-      credits_used: credits_used ? Number(credits_used) : 0,
+      credits_used: creditsToDeduct,
       status: "completed"
     });
+    console.log("Credits to deduct:", creditsToDeduct);
+    // Deduct credits from user
+    if (creditsToDeduct > 0) {
+      // ✅ DECREASE CREDITS FROM USER TABLE
+      await UserPayment.query().knex()('users')
+        .where({ user_id: payment.user_id })
+        .decrement('credits', Number(credits_used));
+    }
 
     return res.status(201).json({
       message: "Portfolio created successfully",
@@ -191,12 +236,14 @@ exports.getPortfolioById = async (req, res) => {
     return res.status(500).json({ message: "Error fetching portfolio" });
   }
 };
+
+// GET PORTFOLIO BY ID (PUBLIC)
 exports.getPortfolioByIdPublic = async (req, res) => {
   try {
     const { id } = req.params;
 
     const portfolio = await Portfolio.query().findOne({
-      portfolio_id: id,
+      portfolio_id: id
     });
 
     if (!portfolio) {
@@ -206,7 +253,7 @@ exports.getPortfolioByIdPublic = async (req, res) => {
     return res.json(portfolio);
 
   } catch (err) {
-    console.error("Portfolio getPortfolioById error:", err);
+    console.error("Portfolio getPortfolioByIdPublic error:", err);
     return res.status(500).json({ message: "Error fetching portfolio" });
   }
 };
@@ -229,10 +276,7 @@ exports.updatePortfolio = async (req, res) => {
 
     // Validate domain if provided and different from current
     if (domain && domain !== portfolio.domain) {
-      const existingPortfolio = await Portfolio.query().findOne({
-        user_id,
-        domain
-      });
+      const existingPortfolio = await Portfolio.query().findOne({ user_id, domain });
       if (existingPortfolio) {
         return res.status(400).json({ message: "Domain already exists for this portfolio" });
       }
