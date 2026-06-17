@@ -1,4 +1,5 @@
 node_modules/
 firebase-service.json
 .env
-bowizzy-ai-assistant-84d029637a02.json
+src/services/googleMeetService.js
+bowizzy-ai-assistant-78b798e213f8.json

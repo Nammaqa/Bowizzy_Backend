@@ -628,6 +628,15 @@ exports.createBankAccountInfo = async (req, res) => {
       return res.status(400).json({ message: "Bank name, and other account related info like account number, IFSC code,.... are required" })
     }
 
+    const existingBankAccount = await BankDetails.query().findOne({
+      account_number: data.account_number,
+      ifsc_code: data.ifsc_code
+    });
+
+    if (existingBankAccount) {
+      return res.status(409).json({ message: "Bank account with this account number and IFSC already exists" });
+    }
+
     const record = await BankDetails.query().insert({
       ...data,
       user_id
