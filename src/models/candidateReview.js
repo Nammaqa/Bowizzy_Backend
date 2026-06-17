@@ -3,14 +3,14 @@ const db = require("../db/knex");
 
 Model.knex(db);
 
-class Certificate extends Model {
+class CandidateReview extends Model {
   static get tableName() {
-    return "candidate_reviews";
+    return "mock_interview_candidate_reviews";
   }
 
   static get idColumn() {
-    return "candidate_review_id";
+    return "mock_interview_candidate_review_id";
   }
 }
 
-module.exports = Certificate;
+module.exports = CandidateReview;
