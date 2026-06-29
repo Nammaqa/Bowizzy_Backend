@@ -112,9 +112,7 @@ exports.getPendingInterviewers = async (req, res) => {
         "users.updated_at"
       )
       .where("users.user_type", "regular")
-      .where(function () {
-        this.where("users.is_interviewer_verified", false).orWhere("users.is_interviewer_verified", "false");
-      })
+      .where("users.is_interviewer_verified", "requesting")
       .join("bank_details", "users.user_id", "bank_details.user_id")
       .withGraphFetched('[personal_details, skills, education_details, work_experience, job_roles, bank_details]')
       .orderBy('user_id', 'asc');
