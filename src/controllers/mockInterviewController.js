@@ -84,7 +84,7 @@ exports.createBooking = async (req, res) => {
             job_role: job_role || null,
             payment_status: "pending",
             resume_url: resume_url || null,
-            experience_months: experience_months ? Number(experience_months) : null,
+            experience_months: experience_months ? Number(experience_months) : 0,
             skills: normalizedSkills,
             amount: Number(amount),
             razorpay_order_id: order.id
