@@ -17,6 +17,63 @@ exports.getUserById = async (req, res) => {
   }
 };
 
+exports.markEnhanceUsed = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+
+    if (!user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.is_enhance_used) {
+      return res.status(200).json({
+        message: "Enhance usage already marked",
+        is_enhance_used: true
+      });
+    }
+
+    await User.query()
+      .patch({ is_enhance_used: true })
+      .where({ user_id });
+
+    return res.status(200).json({
+      message: "Enhance usage marked successfully",
+      is_enhance_used: true
+    });
+  } catch (err) {
+    console.error("Mark enhance used Error:", err);
+    return res.status(500).json({ message: "Failed to update enhance usage" });
+  }
+};
+
+exports.checkEnhanceUsed = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+
+    if (!user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "Enhance usage status fetched successfully",
+      is_enhance_used: Boolean(user.is_enhance_used)
+    });
+  } catch (err) {
+    console.error("Check enhance used Error:", err);
+    return res.status(500).json({ message: "Failed to check enhance usage" });
+  }
+};
+
 exports.claimWelcomeCredit = async (req, res) => {
   const trx = await User.startTransaction();
   try {
