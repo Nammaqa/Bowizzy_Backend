@@ -432,6 +432,7 @@ exports.profileData = async (req, res) => {
       image: personalDetails.profile_photo_url || null,
       isWelcomeBonusRedeemed: user.welcomeBonusRedeemed,
       credits: user.credits || 0,
+      purchased_credits: user.purchased_credits || 0,
       coupon_code: user.coupon_code || null,
     };
     
