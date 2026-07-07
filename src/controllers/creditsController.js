@@ -1,5 +1,8 @@
 const UserCredits = require("../models/UserCredits");
 const User = require("../models/User");
+const UserPayment = require("../models/UserPayment");
+const razorpay = require("../utils/razorpay");
+const crypto = require("crypto");
 
 exports.getUserCredits = async (req, res) => {
   try {
@@ -181,6 +184,115 @@ exports.updateCredits = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error updating credits" });
+  }
+};
+
+exports.createCreditPurchaseOrder = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const { amount, currency = "INR" } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({ message: "User id is required" });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    const purchasedCredits = Math.floor(Number(amount) *2 ); // Assuming 1 credit = 10 currency units
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const paise = Math.round(Number(amount) * 100);
+    const order = await razorpay.orders.create({
+      amount: paise,
+      currency,
+      receipt: `credits_${user_id}_${Date.now()}`
+    });
+
+    await UserPayment.query().insert({
+      user_id,
+      razorpay_order_id: order.id,
+      amount: Number(amount),
+      currency,
+      status: "created",
+      plan_type: "credits"
+    });
+
+    return res.status(200).json({
+      message: "Credit purchase order created successfully",
+      order,
+      purchasedCredits: Number(purchasedCredits),
+      amount: Number(amount)
+    });
+  } catch (err) {
+    console.error("Create credit purchase order error:", err);
+    return res.status(500).json({ message: "Failed to create credit purchase order" });
+  }
+};
+
+exports.verifyCreditPurchase = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      amount,
+      purchasedCredits
+    } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ message: "Missing Razorpay payment details" });
+    }
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expected = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expected !== razorpay_signature) {
+      await UserPayment.query().patch({ status: "failed" }).where({ razorpay_order_id });
+      return res.status(400).json({ message: "Payment verification failed" });
+    }
+
+    const payment = await UserPayment.query().findOne({ razorpay_order_id });
+    if (!payment) {
+      return res.status(404).json({ message: "Payment order not found" });
+    }
+
+    const creditsToAdd = Number(purchasedCredits || amount || 0);
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    await UserPayment.query()
+      .patch({
+        status: "success",
+        razorpay_payment_id,
+        razorpay_signature
+      })
+      .where({ razorpay_order_id });
+
+
+    const updatedPurchasedCredits = Number(user.purchased_credits || 0) + creditsToAdd;
+    const updatedBonusCredits = Number(user.credits || 0) + Math.floor(creditsToAdd * 0.1);
+    await User.query().patch({ purchased_credits: updatedPurchasedCredits }).where({ user_id });
+    await User.query().patch({ credits: updatedBonusCredits }).where({ user_id });
+
+    return res.status(200).json({
+      message: "Credit purchase verified successfully",
+      purchased_credits: updatedPurchasedCredits
+    });
+  } catch (err) {
+    console.error("Verify credit purchase error:", err);
+    return res.status(500).json({ message: "Failed to verify credit purchase" });
   }
 };
 

@@ -22,12 +22,18 @@ function generateCouponCode() {
 }
 
 const otpStore = {};
+const forgotPasswordOtpStore = {};
 
 const normalizeEmail = (email) => (email || "").trim().toLowerCase();
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-const sendOtpToEmail = async (email, otp) => {
+const sendOtpToEmail = async (email, otp, options = {}) => {
+  const {
+    subject = "[Bowizzy] Verify Your Email",
+    title = "Bowizzy Email Verification",
+    message = "Please use the OTP below to verify your email address for Bowizzy."
+  } = options;
   const mailServiceUrl = "https://bowizzy-mail-service.vercel.app/api/send-email";
   const bypassHeader = "clRAc3bjRwnrpqGZgac1fy7zaDUmwp7u";
 
@@ -36,9 +42,9 @@ const sendOtpToEmail = async (email, otp) => {
     <html>
       <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 0;">
         <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 32px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <h2 style="color: #007bff; margin-bottom: 12px;">Bowizzy Email Verification</h2>
+          <h2 style="color: #007bff; margin-bottom: 12px;">${title}</h2>
           <p>Hello,</p>
-          <p>Please use the OTP below to verify your email address for Bowizzy.</p>
+          <p>${message}</p>
           <div style="background: #f0f0f0; border: 1px solid #007bff; border-radius: 8px; padding: 16px; margin: 24px 0; text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #007bff;">${otp}</div>
           <p>This OTP is valid for 10 minutes.</p>
           <p>Thank you,<br />The Bowizzy Team</p>
@@ -55,7 +61,7 @@ const sendOtpToEmail = async (email, otp) => {
     },
     body: JSON.stringify({
       to: email,
-      subject: "[Bowizzy] Verify Your Email",
+      subject,
       html: htmlContent,
     }),
   });
@@ -361,6 +367,121 @@ exports.verifyEmailOtp = async (req, res) => {
   } catch (err) {
     console.error("Verify email OTP Error:", err);
     return res.status(500).json({ message: "Failed to verify OTP" });
+  }
+};
+
+exports.sendForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await User.query().findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    const otp = generateOTP();
+    const expiryTime = Date.now() + 10 * 60 * 1000;
+
+    forgotPasswordOtpStore[normalizedEmail] = { otp, expiryTime };
+
+    await sendOtpToEmail(normalizedEmail, otp, {
+      subject: "[Bowizzy] Reset Your Password",
+      title: "Bowizzy Password Reset",
+      message: "Please use the OTP below to reset your password for Bowizzy."
+    });
+
+    return res.status(200).json({
+      message: "Password reset OTP sent successfully to your email",
+      email: normalizedEmail,
+      expiresIn: "10 minutes"
+    });
+  } catch (err) {
+    console.error("Send forgot password OTP Error:", err);
+    return res.status(500).json({ message: "Failed to send password reset OTP" });
+  }
+};
+
+exports.verifyForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const storedOTP = forgotPasswordOtpStore[normalizedEmail];
+
+    if (!storedOTP) {
+      return res.status(400).json({ message: "No OTP found. Please request a new one." });
+    }
+
+    if (Date.now() > storedOTP.expiryTime) {
+      delete forgotPasswordOtpStore[normalizedEmail];
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    if (storedOTP.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    return res.status(200).json({
+      message: "Password reset OTP verified successfully",
+      email: normalizedEmail
+    });
+  } catch (err) {
+    console.error("Verify forgot password OTP Error:", err);
+    return res.status(500).json({ message: "Failed to verify password reset OTP" });
+  }
+};
+
+exports.changeForgotPassword = async (req, res) => {
+  try {
+    const { email, otp, new_password, password } = req.body;
+    const newPassword = new_password || password;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "Email, OTP, and new password are required" });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const storedOTP = forgotPasswordOtpStore[normalizedEmail];
+
+    if (!storedOTP) {
+      return res.status(400).json({ message: "No OTP found. Please request a new one." });
+    }
+
+    if (Date.now() > storedOTP.expiryTime) {
+      delete forgotPasswordOtpStore[normalizedEmail];
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    if (storedOTP.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    const user = await User.query().findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 10);
+    await User.query().patch({ password_hash }).where({ user_id: user.user_id });
+
+    delete forgotPasswordOtpStore[normalizedEmail];
+
+    return res.status(200).json({
+      message: "Password changed successfully"
+    });
+  } catch (err) {
+    console.error("Change forgot password Error:", err);
+    return res.status(500).json({ message: "Failed to change password" });
   }
 };
 

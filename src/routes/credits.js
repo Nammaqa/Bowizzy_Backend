@@ -33,6 +33,18 @@ router.put(
   controller.updateCredits
 );
 
+router.post(
+  "/credits/:user_id/create-order",
+  auth,
+  controller.createCreditPurchaseOrder
+);
+
+router.post(
+  "/credits/:user_id/verify-payment",
+  auth,
+  controller.verifyCreditPurchase
+);
+
 router.get(
   "/credits/history/:user_id",
   auth,
