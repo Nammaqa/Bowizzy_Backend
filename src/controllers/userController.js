@@ -30,20 +30,28 @@ exports.markEnhanceUsed = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    if (user.is_enhance_used) {
+    const currentLeft = Number(user.enhance_usage_left || 0);
+
+    if (currentLeft <= 0) {
+      await User.query()
+        .patch({ enhance_usage_left: 0 })
+        .where({ user_id });
+
       return res.status(200).json({
-        message: "Enhance usage already marked",
-        is_enhance_used: true
+        message: "Enhance usage exhausted",
+        enhance_usage_left: 0
       });
     }
 
+    const nextLeft = currentLeft - 1;
+
     await User.query()
-      .patch({ is_enhance_used: true })
+      .patch({ enhance_usage_left: nextLeft })
       .where({ user_id });
 
     return res.status(200).json({
       message: "Enhance usage marked successfully",
-      is_enhance_used: true
+      enhance_usage_left: nextLeft
     });
   } catch (err) {
     console.error("Mark enhance used Error:", err);
@@ -66,11 +74,100 @@ exports.checkEnhanceUsed = async (req, res) => {
 
     return res.status(200).json({
       message: "Enhance usage status fetched successfully",
-      is_enhance_used: Boolean(user.is_enhance_used)
+      isBonus_enhance_used: Boolean(user.isBonus_enhance_used),
+      enhance_usage_left: Number(user.enhance_usage_left || 0)
     });
   } catch (err) {
     console.error("Check enhance used Error:", err);
     return res.status(500).json({ message: "Failed to check enhance usage" });
+  }
+};
+
+exports.redeemEnhanceWithBonus = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+
+    if (!user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const updatedUsageLeft = Number(user.enhance_usage_left || 0) + 5;
+    await User.query()
+      .patch({
+        credits: Number(user.credits) - 5
+      })
+      .where({ user_id });
+    await User.query()
+      .patch({
+        isBonus_enhance_used: true,
+        enhance_usage_left: updatedUsageLeft
+      })
+      .where({ user_id });
+
+
+    return res.status(200).json({
+      message: "Enhance bonus redeemed successfully",
+      isBonus_enhance_used: true,
+      enhance_usage_left: updatedUsageLeft
+    });
+  } catch (err) {
+    console.error("Redeem enhance with bonus Error:", err);
+    return res.status(500).json({ message: "Failed to redeem enhance bonus" });
+  }
+};
+
+exports.redeemEnhanceWithPurchasedCredits = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+
+    if (!user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const creditsRequested = Number(req.body.credits || req.body.credits_to_use || 0);
+    if (creditsRequested <= 0) {
+      return res.status(400).json({
+        message: "Please specify a valid number of purchased credits to use."
+      });
+    }
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const purchasedCredits = Number(user.purchased_credits || 0);
+    if (purchasedCredits <= 0) {
+      return res.status(400).json({
+        message: "You do not have any purchased credits. Please recharge."
+      });
+    }
+
+    const creditsToUse = Math.min(purchasedCredits, creditsRequested);
+    const updatedPurchasedCredits = purchasedCredits - creditsToUse;
+    const updatedUsageLeft = Number(user.enhance_usage_left || 0) + creditsToUse;
+
+    await User.query()
+      .patch({
+        purchased_credits: updatedPurchasedCredits,
+        enhance_usage_left: updatedUsageLeft
+      })
+      .where({ user_id });
+
+    return res.status(200).json({
+      message: `Enhance redeemed with purchased credits successfully. Used ${creditsToUse} purchased credit(s).`,
+      credits_used: creditsToUse,
+      purchased_credits: updatedPurchasedCredits,
+      enhance_usage_left: updatedUsageLeft
+    });
+  } catch (err) {
+    console.error("Redeem enhance with purchased credits Error:", err);
+    return res.status(500).json({ message: "Failed to redeem enhance with purchased credits" });
   }
 };
 
