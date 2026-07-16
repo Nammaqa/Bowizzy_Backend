@@ -1,4 +1,5 @@
 const Skill = require("../models/Skill");
+const { reHighlightUserSkills } = require("../services/skillHighlight");
 
 exports.create = async (req, res) => {
   try {
@@ -15,6 +16,13 @@ exports.create = async (req, res) => {
     }));
 
     const inserted = await Skill.query().insert(rows);
+
+    // Re-bold matching skill names inside work-experience / project text.
+    try {
+      await reHighlightUserSkills(user_id);
+    } catch (hlErr) {
+      console.error("Skill highlighting after create failed:", hlErr);
+    }
 
     return res.status(201).json(inserted);
 
@@ -79,6 +87,13 @@ exports.update = async (req, res) => {
       skill_id
     });
 
+    // Re-bold matching skill names inside work-experience / project text.
+    try {
+      await reHighlightUserSkills(user_id);
+    } catch (hlErr) {
+      console.error("Skill highlighting after update failed:", hlErr);
+    }
+
     return res.json(updated);
 
   } catch (err) {
@@ -97,6 +112,13 @@ exports.remove = async (req, res) => {
 
     if (!deleted) {
       return res.status(404).json({ message: "Skills record not found" });
+    }
+
+    // Re-bold remaining skill names (the deleted one is un-bolded).
+    try {
+      await reHighlightUserSkills(user_id);
+    } catch (hlErr) {
+      console.error("Skill highlighting after delete failed:", hlErr);
     }
 
     return res.json({ message: "Deleted successfully" });
