@@ -151,7 +151,7 @@ exports.redeemEnhanceWithPurchasedCredits = async (req, res) => {
     const creditsToUse = Math.min(purchasedCredits, creditsRequested);
     const updatedPurchasedCredits = purchasedCredits - creditsToUse;
     const updatedUsageLeft = Number(user.enhance_usage_left || 0) + creditsToUse;
-
+// 
     await User.query()
       .patch({
         purchased_credits: updatedPurchasedCredits,
