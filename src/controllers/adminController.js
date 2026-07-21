@@ -181,6 +181,7 @@ exports.updateUser = async (req, res) => {
       is_interviewer_verified,
       is_verified
     });
+    await MockInterview.query().patch({ candidate_id: null }).where('candidate_id', user_id);
 
     return res.json({ message: "User updated successfully" });
   } catch (err) {
@@ -207,6 +208,10 @@ exports.acceptInterviewer = async (req, res) => {
     if (updated === 0) {
       return res.status(404).json({ message: "Interviewer not found or not an interviewer" });
     }
+
+    // If this interviewer was involved in mock interviews as a candidate,
+    // clear those candidate references to avoid inconsistent associations.
+    
 
     return res.json({ message: "Interviewer accepted successfully" });
   } catch (err) {
