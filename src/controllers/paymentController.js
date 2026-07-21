@@ -87,6 +87,10 @@ exports.verifyPayment = async (req, res) => {
       })
       .where({ razorpay_order_id });
 
+    
+
+
+
     // ✅ ADD COIN TRANSACTION IF CREDITS APPLIED > 0
     if (credits_applied && Number(credits_applied) > 0 && payment) {
       await UserPayment.query().knex()('credit_transactions').insert({
@@ -101,6 +105,22 @@ exports.verifyPayment = async (req, res) => {
       await UserPayment.query().knex()('users')
         .where({ user_id: payment.user_id })
         .decrement('credits', Number(credits_applied));
+    }
+    const userId = payment?.user_id || req.user?.user_id;
+
+    // ✅ ADD 5 BONUS CREDITS FOR EVERY VERIFIED PAYMENT
+    if (userId) {
+      await UserPayment.query().knex()('credit_transactions').insert({
+        user_id: userId,
+        credits: 5,
+        transaction_type: "welcome_bonus",
+        description: `Bonus credits for verified payment ${razorpay_order_id}`,
+        reference_id: null
+      });
+
+      await UserPayment.query().knex()('users')
+        .where({ user_id: userId })
+        .increment('credits', 5);
     }
 
     return res.json({
