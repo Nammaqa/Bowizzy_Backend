@@ -7,43 +7,51 @@ const User = require("../models/User");
 // CREATE RAZORPAY ORDER FOR PORTFOLIO
 exports.createOrder = async (req, res) => {
   try {
-    const { amount, credits_used, portfolio_type } = req.body;
+    const { amount, credits_used, purchased_credits_used, bonus_credits_used, portfolio_type } = req.body;
     const user_id = req.user.user_id;
-
-    // Validate input
-    if (!amount || isNaN(amount) || Number(amount) <= 0) {
-      return res.status(400).json({ message: "Invalid amount" });
-    }
 
     if (!portfolio_type) {
       return res.status(400).json({ message: "Portfolio type is required" });
     }
 
-    // Check if user has enough credits
-    if (credits_used && Number(credits_used) > 0) {
-      const user = await User.query().findById(user_id);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      if (user.credits < Number(credits_used)) {
-        return res.status(400).json({
-          message: "Insufficient credits",
-          available_credits: user.credits,
-          credits_requested: Number(credits_used)
-        });
-      }
+    const purchasedToUse = Number(purchased_credits_used) || 0;
+    const bonusToUse = Number(bonus_credits_used) || 0;
+
+    const user = await User.query().findById(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Razorpay needs paise
+    if (purchasedToUse > 0 && (user.purchased_credits ?? 0) < purchasedToUse) {
+      return res.status(400).json({
+        message: "Insufficient purchased credits",
+        available_purchased_credits: user.purchased_credits ?? 0,
+        purchased_credits_requested: purchasedToUse,
+      });
+    }
+
+    if (bonusToUse > 0 && (user.credits ?? 0) < bonusToUse) {
+      return res.status(400).json({
+        message: "Insufficient bonus credits",
+        available_credits: user.credits ?? 0,
+        credits_requested: bonusToUse,
+      });
+    }
+
+    // Nothing left to pay — caller should be using the credit-only flow instead,
+    // but guard against it anyway rather than creating a ₹0 Razorpay order.
+    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+      return res.status(400).json({ message: "No payable amount — use the credit-only portfolio creation flow" });
+    }
+
     const paise = Math.round(Number(amount) * 100);
 
     const order = await razorpay.orders.create({
       amount: paise,
       currency: "INR",
-      receipt: `portfolio_${Date.now()}`
+      receipt: `portfolio_${Date.now()}`,
     });
 
-    // Store order details in database
     await UserPayment.query().insert({
       user_id,
       razorpay_order_id: order.id,
@@ -52,16 +60,17 @@ exports.createOrder = async (req, res) => {
       currency: "INR",
       status: "created",
       plan_type: "portfolio",
-      credits_applied: credits_used ? Number(credits_used) : 0
+      credits_applied: (Number(credits_used) || 0),
+      purchased_credits_applied: purchasedToUse,
+      bonus_credits_applied: bonusToUse,
     });
 
     return res.json({
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      order
+      order,
     });
-
   } catch (err) {
     console.error("Portfolio createOrder error:", err);
     return res.status(500).json({ message: "Order creation failed" });
@@ -109,27 +118,22 @@ exports.createPortfolio = async (req, res) => {
       order_id,
       domain,
       credits_used,
+      purchased_credits_used,
+      bonus_credits_used,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
     } = req.body;
     const user_id = req.user.user_id;
 
     console.log("createPortfolio request body:", req.body);
 
-    // Validate required fields
     if (!portfolio_name) {
       return res.status(400).json({ message: "Portfolio name is required" });
     }
-
     if (!portfolio_type) {
       return res.status(400).json({ message: "Portfolio type is required" });
     }
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required" });
-    }
-
-    // Validate domain if provided
     if (domain) {
       const existingPortfolio = await Portfolio.query().findOne({ user_id, domain });
       if (existingPortfolio) {
@@ -137,35 +141,60 @@ exports.createPortfolio = async (req, res) => {
       }
     }
 
-    // Verify payment exists and belongs to user
-    const payment = await UserPayment.query().findOne({
-      razorpay_order_id: order_id,
-      user_id
-    });
+    const purchasedToUse = Number(purchased_credits_used) || 0;
+    const bonusToUse = Number(bonus_credits_used) || 0;
+    const creditsToDeduct = Number(credits_used) || (purchasedToUse + bonusToUse) || 0;
 
-    if (!payment) {
-      return res.status(400).json({ message: "Payment not found or invalid" });
-    }
-
-    // Re-validate credits at creation time (guard against race conditions)
-    const creditsToDeduct = credits_used ? Number(credits_used) : 0;
-    if (creditsToDeduct > 0) {
+    // Re-validate credit balances at creation time regardless of path (guards race conditions)
+    if (purchasedToUse > 0 || bonusToUse > 0) {
       const user = await User.query().findById(user_id);
-      if (!user || user.credits < creditsToDeduct) {
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      if (purchasedToUse > 0 && (user.purchased_credits ?? 0) < purchasedToUse) {
         return res.status(400).json({
-          message: "Insufficient credits",
-          available_credits: user?.credits ?? 0,
-          credits_requested: creditsToDeduct
+          message: "Insufficient purchased credits",
+          available_purchased_credits: user.purchased_credits ?? 0,
+          purchased_credits_requested: purchasedToUse,
+        });
+      }
+      if (bonusToUse > 0 && (user.credits ?? 0) < bonusToUse) {
+        return res.status(400).json({
+          message: "Insufficient bonus credits",
+          available_credits: user.credits ?? 0,
+          credits_requested: bonusToUse,
         });
       }
     }
 
-    // Update payment record
-    await UserPayment.query().patch({
-      razorpay_payment_id,
-      razorpay_signature,
-      status: "success"
-    }).where({ razorpay_order_id: order_id });
+    let paidAmount = 0;
+
+    if (order_id) {
+      // ── Paid path: purchased credits didn't fully cover it, Razorpay order exists ──
+      const payment = await UserPayment.query().findOne({
+        razorpay_order_id: order_id,
+        user_id,
+      });
+
+      if (!payment) {
+        return res.status(400).json({ message: "Payment not found or invalid" });
+      }
+
+      await UserPayment.query()
+        .patch({
+          razorpay_payment_id,
+          razorpay_signature,
+          status: "success",
+        })
+        .where({ razorpay_order_id: order_id });
+
+      paidAmount = payment.amount;
+    } else {
+      // ── Credit-only path: purchased credits fully covered the base price, Razorpay bypassed ──
+      if (creditsToDeduct <= 0) {
+        return res.status(400).json({ message: "Order ID is required unless the portfolio is fully covered by credits" });
+      }
+    }
 
     // Create portfolio record
     const portfolio = await Portfolio.query().insert({
@@ -173,26 +202,35 @@ exports.createPortfolio = async (req, res) => {
       portfolio_name: portfolio_name || null,
       description: description || null,
       portfolio_type,
-      razorpay_order_id: order_id,
+      razorpay_order_id: order_id || null,
       domain: domain || null,
-      paid_amount: payment.amount,
+      paid_amount: paidAmount,
       credits_used: creditsToDeduct,
-      status: "completed"
+      purchased_credits_used: purchasedToUse,
+      // bonus_credits_used: bonusToUse,
+      status: "completed",
     });
-    console.log("Credits to deduct:", creditsToDeduct);
-    // Deduct credits from user
-    if (creditsToDeduct > 0) {
-      // ✅ DECREASE CREDITS FROM USER TABLE
-      await UserPayment.query().knex()('users')
-        .where({ user_id: payment.user_id })
-        .decrement('credits', Number(credits_used));
+
+    console.log("Purchased credits to deduct:", purchasedToUse, "Bonus credits to deduct:", bonusToUse);
+
+    // Deduct credits from the correct balances
+    const knex = Portfolio.query().knex();
+    if (purchasedToUse > 0) {
+      await knex("users").where({ user_id }).decrement("purchased_credits", purchasedToUse);
     }
+    if (bonusToUse > 0) {
+      await knex("users").where({ user_id }).decrement("credits", bonusToUse);
+    }
+
+    // Award 5 bonus credits for every successful portfolio transaction
+   await UserPayment.query().knex()('users')
+        .where({ user_id: user_id })
+        .increment('credits', 5);
 
     return res.status(201).json({
       message: "Portfolio created successfully",
-      portfolio
+      portfolio,
     });
-
   } catch (err) {
     console.error("Portfolio createPortfolio error:", err);
     return res.status(500).json({ message: "Portfolio creation failed" });
