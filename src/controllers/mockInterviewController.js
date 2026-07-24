@@ -24,7 +24,8 @@ exports.createBooking = async (req, res) => {
             experience_months,
             amount,
             skills,
-            meeting_link
+            meeting_link,
+            purchased_credits_used
         } = req.body;
 
         if (!start_time_utc || !end_time_utc) {
@@ -35,7 +36,7 @@ exports.createBooking = async (req, res) => {
             return res.status(400).json({ message: "interview_type must be 'online' or 'offline'" });
         }
 
-        if (!amount || isNaN(amount) || Number(amount) <= 0) {
+        if (amount === undefined || amount === null || isNaN(amount) || Number(amount) < 0) {
             return res.status(400).json({ message: "Valid amount is required" });
         }
 
@@ -61,16 +62,18 @@ exports.createBooking = async (req, res) => {
 
         const paise = Math.round(Number(amount) * 100);
 
-        let order;
-        try {
-            order = await razorpay.orders.create({
-                amount: paise,
-                currency: "INR",
-                receipt: `mock_interview_${Date.now()}`
-            });
-        } catch (razorpayError) {
-            console.error("createBooking Razorpay error:", razorpayError);
-            return res.status(500).json({ message: "Razorpay order creation failed", error: razorpayError.message });
+        let order = null;
+        if (paise > 0) {
+            try {
+                order = await razorpay.orders.create({
+                    amount: paise,
+                    currency: "INR",
+                    receipt: `mock_interview_${Date.now()}`
+                });
+            } catch (razorpayError) {
+                console.error("createBooking Razorpay error:", razorpayError);
+                return res.status(500).json({ message: "Razorpay order creation failed", error: razorpayError.message });
+            }
         }
 
         const booking = await MockInterview.query().insert({
@@ -82,15 +85,24 @@ exports.createBooking = async (req, res) => {
             meeting_link: interview_type === "online" ? (meeting_link || null) : null,
             interview_type,
             job_role: job_role || null,
-            payment_status: "pending",
+            payment_status: paise > 0 ? "pending" : "confirmed",
             resume_url: resume_url || null,
             experience_months: experience_months ? Number(experience_months) : 0,
             skills: normalizedSkills,
             amount: Number(amount),
-            razorpay_order_id: order.id
+            razorpay_order_id: order ? order.id : null
         });
 
-        return res.status(201).json({ booking, order });
+        if (purchased_credits_used && Number(purchased_credits_used) > 0) {
+            const creditsToUse = Number(purchased_credits_used);
+            await User.query().decrement("purchased_credits", creditsToUse).where({ user_id: candidate_id });
+        }
+        // Reward 5 bonus credits
+        await UserPayment.query().knex()('users')
+            .where({ user_id: user_id })
+            .increment('credits', 5);
+        return res.status(201).json({ booking, order: order || null });
+        
     } catch (err) {
         console.error("createBooking error:", err);
         return res.status(500).json({ message: "Error creating mock interview booking" });
@@ -343,11 +355,11 @@ exports.cancelBooking = async (req, res) => {
             // If more than 3 hours: add 50% refund to credits
             if (hoursRemaining > 3) {
                 const refundAmount = Math.round(Number(booking.amount) * 0.5);
-                
+
                 // Get current user credits and add refund
                 const user = await User.query().findById(booking.candidate_id);
                 const currentCredits = Number(user.credits || 0);
-                
+
                 await User.query().patch({ credits: currentCredits + refundAmount })
                     .where("user_id", booking.candidate_id);
             }
@@ -396,11 +408,11 @@ exports.cancelBooking = async (req, res) => {
 //         // If more than 3 hours: add 50% refund to credits
 //         if (hoursRemaining > 3) {
 //             const refundAmount = Number(booking.amount) * 0.5;
-            
+
 //             // Get current user credits and add refund
 //             const user = await User.query().findById(booking.candidate_id);
 //             const currentCredits = Number(user.credits || 0);
-            
+
 //             await User.query().patch({ credits: currentCredits + refundAmount })
 //                 .where("user_id", booking.candidate_id);
 //         }
@@ -468,6 +480,8 @@ exports.submitBankDetails = async (req, res) => {
         await User.query().patch({
             is_interviewer_verified: "requesting"
         }).where({ user_id });
+
+
 
         return res.status(201).json({
             message: "Bank details submitted successfully. Pending approval.",
@@ -614,7 +628,7 @@ exports.submitCandidateReview = async (req, res) => {
         if (!interviewer_id) {
             return res.status(403).json({ message: "Invalid user. Access denied" });
         }
-    
+
         const requiredFields = [
             "mock_interview_id",
             "candidate_id",
@@ -742,7 +756,7 @@ exports.submitInterviewerReview = async (req, res) => {
             return res.status(404).json({ message: "Mock interview booking not found" });
         }
 
-       
+
 
         if (mockInterview.candidate_id !== Number(data.candidate_id)) {
             return res.status(400).json({ message: "Candidate ID does not match the booking" });
