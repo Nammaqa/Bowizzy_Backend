@@ -201,6 +201,22 @@ exports.claimWelcomeCredit = async (req, res) => {
   }
 };
 
+// email and phone_number are UNIQUE columns, so the tombstoned value has to be
+// unique across every deletion — including a brand new account that reuses the
+// same email as a previously deleted one. user_id + timestamp guarantees that.
+const MAX_COLUMN_LENGTH = 255;
+
+const buildDeletedValue = (value, user_id) => {
+  if (!value) return null;
+
+  // Strip any prefix from an earlier deletion so it doesn't stack on re-delete.
+  // Covers the legacy formats too: "deleted_x", "deleted_1_x", "deleted_9_173..._x".
+  const original = String(value).replace(/^deleted_(\d+_)*/, "");
+  const prefix = `deleted_${user_id}_${Date.now()}_`;
+
+  return `${prefix}${original}`.slice(0, MAX_COLUMN_LENGTH);
+};
+
 exports.deleteAccount = async (req, res) => {
   const trx = await User.startTransaction();
   try {
@@ -213,45 +229,8 @@ exports.deleteAccount = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Handle email deletion with counter
-    let deletedEmail = null;
-    if (user.email) {
-      if (user.email.startsWith("deleted_")) {
-        // Already deleted, add a counter
-        const match = user.email.match(/^deleted_(\d+)_/);
-        if (match) {
-          const counter = parseInt(match[1]) + 1;
-          const originalEmail = user.email.replace(/^deleted_\d+_/, "");
-          deletedEmail = `deleted_${counter}_${originalEmail}`;
-        } else {
-          // First re-deletion
-          const originalEmail = user.email.replace(/^deleted_/, "");
-          deletedEmail = `deleted_1_${originalEmail}`;
-        }
-      } else {
-        deletedEmail = `deleted_${user.email}`;
-      }
-    }
-
-    // Handle phone deletion with counter
-    let deletedPhone = null;
-    if (user.phone_number) {
-      if (user.phone_number.startsWith("deleted_")) {
-        // Already deleted, add a counter
-        const match = user.phone_number.match(/^deleted_(\d+)_/);
-        if (match) {
-          const counter = parseInt(match[1]) + 1;
-          const originalPhone = user.phone_number.replace(/^deleted_\d+_/, "");
-          deletedPhone = `deleted_${counter}_${originalPhone}`;
-        } else {
-          // First re-deletion
-          const originalPhone = user.phone_number.replace(/^deleted_/, "");
-          deletedPhone = `deleted_1_${originalPhone}`;
-        }
-      } else {
-        deletedPhone = `deleted_${user.phone_number}`;
-      }
-    }
+    const deletedEmail = buildDeletedValue(user.email, user_id);
+    const deletedPhone = buildDeletedValue(user.phone_number, user_id);
 
     await User.query(trx).findById(user_id).patch({
       is_user_deleted: true,
