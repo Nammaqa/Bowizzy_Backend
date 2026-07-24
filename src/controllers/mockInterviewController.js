@@ -122,23 +122,22 @@ exports.fetchInterviews = async (req, res) => {
             query.whereRaw('LOWER(job_role) = ?', [normalizedRole]);
         }
 
-        if (skills) {
-            const skillList = String(skills)
-                .split(',')
-                .map((skill) => skill.trim().toLowerCase())
-                .filter(Boolean);
+        const skillList = String(skills || '')
+            .split(',')
+            .map((skill) => skill.trim().toLowerCase())
+            .filter(Boolean);
 
-            if (skillList.length === 0) {
-                return res.status(400).json({ message: 'skills query must contain at least one skill' });
-            }
-
-            query.where(function () {
-                skillList.forEach((skill) => {
-                    const escapedSkill = escapeRegex(skill);
-                    this.orWhereRaw("LOWER(skills) ~ ?", [`(^|,\\s*)${escapedSkill}(\\s*,|$)`]);
-                });
-            });
+        // An interviewer with no skills can't match any interview.
+        if (skillList.length === 0) {
+            return res.json([]);
         }
+
+        query.where(function () {
+            skillList.forEach((skill) => {
+                const escapedSkill = escapeRegex(skill);
+                this.orWhereRaw("LOWER(skills) ~ ?", [`(^|,\\s*)${escapedSkill}(\\s*,|$)`]);
+            });
+        });
 
         const interviews = await query.orderBy('created_at', 'desc');
 
