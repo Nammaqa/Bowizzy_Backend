@@ -8,39 +8,83 @@ const UserSubscription = require("../models/UserSubscription");
 // CREATE ORDER
 exports.createOrder = async (req, res) => {
   try {
-    const { amount, plan_type, breakdown, credits_applied } = req.body;
+    const { amount, plan_type, breakdown, credits_applied, purchased_credits_used, bonus_credits_used } = req.body;
     const user_id = req.user.user_id;
 
-    // validate rupees
-    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    const parsedAmount = Number(amount) || 0;
+    const purchasedCredits = purchased_credits_used ? Math.round(Number(purchased_credits_used)) : 0;
+    const bonusCredits = bonus_credits_used ? Math.round(Number(bonus_credits_used)) : 0;
+
+    // validate amount
+    if (isNaN(parsedAmount) || parsedAmount < 0) {
       return res.status(400).json({ message: "Invalid amount" });
     }
 
-    // Razorpay needs paise
-    const paise = Math.round(Number(amount) * 100);
+    let order_id;
+    let payment_status = "created";
+    let order_response = {};
 
-    const order = await razorpay.orders.create({
-      amount: paise,
-      currency: "INR",
-      receipt: `rcpt_${Date.now()}`
-    });
+    if (parsedAmount === 0) {
+      // Bypass razorpay for 0 amount
+      order_id = `free_order_${Date.now()}`;
+      payment_status = "success";
+      order_response = {
+        id: order_id,
+        amount: 0,
+        currency: "INR",
+        status: "created"
+      };
+
+      // Deduct immediately since no verify for amount=0
+      if (purchasedCredits > 0) {
+        await UserPayment.query().knex()('users').where({ user_id }).decrement('purchased_credits', purchasedCredits);
+      }
+      if (bonusCredits > 0) {
+        await UserPayment.query().knex()('users').where({ user_id }).decrement('credits', bonusCredits);
+      }
+
+      // ✅ ADD 5 BONUS CREDITS FOR FULLY CREDIT-COVERED (BYPASSED) ORDERS
+      await UserPayment.query().knex()('credit_transactions').insert({
+        user_id,
+        credits: 5,
+        transaction_type: "welcome_bonus",
+        description: `Bonus credits for bypassed payment ${order_id}`,
+        reference_id: null
+      });
+
+      await UserPayment.query().knex()('users')
+        .where({ user_id })
+        .increment('credits', 5);
+    } else {
+      // Razorpay needs paise
+      const paise = Math.round(parsedAmount * 100);
+      const order = await razorpay.orders.create({
+        amount: paise,
+        currency: "INR",
+        receipt: `rcpt_${Date.now()}`
+      });
+      order_id = order.id;
+      order_response = order;
+    }
 
     // ✅ STORE RUPEES IN DB with breakdown details
     await UserPayment.query().insert({
       user_id,
-      razorpay_order_id: order.id,
-      amount: Number(amount),   // ₹100 stays 100
+      razorpay_order_id: order_id,
+      amount: parsedAmount,
       currency: "INR",
-      status: "created",
+      status: payment_status,
       plan_type,
       credits_applied: credits_applied ? Number(credits_applied) : null,
+      purchased_credits_applied: purchasedCredits > 0 ? purchasedCredits : null,
+      bonus_credits_applied: bonusCredits > 0 ? bonusCredits : null,
       base_price: breakdown?.basePrice ? Number(breakdown.basePrice) : null,
       credit_discount: breakdown?.creditDiscount ? Number(breakdown.creditDiscount) : null,
       cgst: breakdown?.cgst ? Number(breakdown.cgst) : null,
       sgst: breakdown?.sgst ? Number(breakdown.sgst) : null
     });
 
-    return res.json(order);
+    return res.json(order_response);
 
   } catch (err) {
     console.error("createOrder error:", err);
@@ -92,10 +136,11 @@ exports.verifyPayment = async (req, res) => {
 
 
     // ✅ ADD COIN TRANSACTION IF CREDITS APPLIED > 0
-    if (credits_applied && Number(credits_applied) > 0 && payment) {
+    const bonusToDeduct = Math.round(payment.bonus_credits_applied ? Number(payment.bonus_credits_applied) : (credits_applied ? Number(credits_applied) : 0));
+    if (bonusToDeduct > 0 && payment) {
       await UserPayment.query().knex()('credit_transactions').insert({
         user_id: payment.user_id,
-        credits: Number(credits_applied),
+        credits: bonusToDeduct,
         transaction_type: "credit_applied",
         description: `Credits applied from payment ${razorpay_order_id}`,
         reference_id: null
@@ -104,7 +149,15 @@ exports.verifyPayment = async (req, res) => {
       // ✅ DECREASE CREDITS FROM USER TABLE
       await UserPayment.query().knex()('users')
         .where({ user_id: payment.user_id })
-        .decrement('credits', Number(credits_applied));
+        .decrement('credits', bonusToDeduct);
+    }
+
+    // ✅ DECREASE PURCHASED CREDITS IF APPLIED
+    if (payment.purchased_credits_applied && Number(payment.purchased_credits_applied) > 0) {
+      const purchasedToDeduct = Math.round(Number(payment.purchased_credits_applied));
+      await UserPayment.query().knex()('users')
+        .where({ user_id: payment.user_id })
+        .decrement('purchased_credits', purchasedToDeduct);
     }
     const userId = payment?.user_id || req.user?.user_id;
 
