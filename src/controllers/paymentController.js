@@ -8,7 +8,7 @@ const UserSubscription = require("../models/UserSubscription");
 // CREATE ORDER
 exports.createOrder = async (req, res) => {
   try {
-    const { amount, plan_type, breakdown, credits_applied, purchased_credits_used, bonus_credits_used } = req.body;
+    const { amount, plan_type, breakdown, credits_applied, purchased_credits_used, bonus_credits_used, session_id } = req.body;
     const user_id = req.user.user_id;
 
     const parsedAmount = Number(amount) || 0;
@@ -67,6 +67,14 @@ exports.createOrder = async (req, res) => {
       order_response = order;
     }
 
+    if (session_id) {
+      const AiSession = require("../models/AiSession");
+      const session = await AiSession.query().findById(session_id);
+      if (session) {
+        await AiSession.query().patch({ is_paid: true, mode: plan_type }).where({ id: session_id });
+      }
+    }
+
     // ✅ STORE RUPEES IN DB with breakdown details
     await UserPayment.query().insert({
       user_id,
@@ -101,7 +109,9 @@ exports.verifyPayment = async (req, res) => {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      credits_applied
+      credits_applied,
+      session_id,
+      plan_type
     } = req.body;
 
     const body = razorpay_order_id + "|" + razorpay_payment_id;
@@ -131,7 +141,7 @@ exports.verifyPayment = async (req, res) => {
       })
       .where({ razorpay_order_id });
 
-    
+
 
 
 
@@ -160,6 +170,14 @@ exports.verifyPayment = async (req, res) => {
         .decrement('purchased_credits', purchasedToDeduct);
     }
     const userId = payment?.user_id || req.user?.user_id;
+
+    if (session_id) {
+      const AiSession = require("../models/AiSession");
+      const session = await AiSession.query().findById(session_id);
+      if (session) {
+        await AiSession.query().patch({ is_paid: true }).where({ id: session_id });
+      }
+    }
 
     // ✅ ADD 5 BONUS CREDITS FOR EVERY VERIFIED PAYMENT
     if (userId) {
