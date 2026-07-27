@@ -14,6 +14,7 @@ router.get("/users/:user_id/mock-interview/accepted-interviews", auth, controlle
 router.post("/users/:user_id/mock-interview/candidate-review", auth, controller.submitCandidateReview);
 router.post("/users/:user_id/mock-interview/interviewer-review", auth, controller.submitInterviewerReview);
 router.get("/mock-interview/bookings", auth, controller.getAllBookings);
+router.post("/mock-interview/confirm-credit-booking", auth, controller.confirmCreditBooking);
 router.get("/users/:user_id/mock-interview/fetch-interviews", auth, controller.fetchInterviews);
 
 // Interviewer verification APIs
