@@ -6,11 +6,19 @@ const Skill = require("../models/Skill");
 const Link = require("../models/Link");
 const Certificate = require("../models/Certificate");
 
+const hasValue = value =>
+  value !== null &&
+  value !== undefined &&
+  (typeof value !== "string" || value.trim() !== "");
+
+const isTrue = value =>
+  value === true || value === 1 || value === "1" || value === "true";
+
 exports.getProfileProgress = async (req, res) => {
   try {
     const user_id = req.params.user_id;
 
-    let totalSections = 6;
+    const totalSections = 6;
     let completed = 0;
 
     let completedSectionsList = [];
@@ -44,6 +52,10 @@ exports.getProfileProgress = async (req, res) => {
     }
 
     const education = await Education.query().where({ user_id });
+    const isCurrentlyPursuing = education.some(record =>
+      isTrue(record.currently_pursuing)
+    );
+
     if (education.length > 0) {
       completed++;
       completedSectionsList.push("education");
@@ -51,12 +63,21 @@ exports.getProfileProgress = async (req, res) => {
       pendingSectionsList.push("education");
     }
 
-    const experience = await WorkExperience.query().where({ user_id });
-    if (experience.length > 0) {
+    // Keep all six sections equally weighted. When a user is currently
+    // pursuing a degree, Work Details are not required and receive their full
+    // section credit automatically.
+    if (isCurrentlyPursuing) {
       completed++;
       completedSectionsList.push("experience");
     } else {
-      pendingSectionsList.push("experience");
+      const workExperience = await WorkExperience.query().where({ user_id });
+
+      if (workExperience.length > 0) {
+        completed++;
+        completedSectionsList.push("experience");
+      } else {
+        pendingSectionsList.push("experience");
+      }
     }
 
     const projects = await Project.query().where({ user_id });
@@ -78,7 +99,19 @@ exports.getProfileProgress = async (req, res) => {
     }
 
     const certificates = await Certificate.query().where({ user_id });
-    if (certificates.length > 0) {
+    const hasCertification = certificates.some(certificate =>
+      [
+        certificate.certificate_type,
+        certificate.certificate_title,
+        certificate.domain,
+        certificate.certificate_provided_by,
+        certificate.date,
+        certificate.description,
+        certificate.file_url
+      ].some(hasValue)
+    );
+
+    if (hasCertification) {
       completed++;
       completedSectionsList.push("certifications");
     } else {
