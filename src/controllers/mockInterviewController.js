@@ -23,7 +23,7 @@ exports.createBooking = async (req, res) => {
             job_role,
             resume_url,
             experience_months,
-            amount,
+            amount, // amount the frontend expects to pay via Razorpay (booking price minus credits applied)
             skills,
             meeting_link,
             purchased_credits_used
@@ -37,10 +37,6 @@ exports.createBooking = async (req, res) => {
             return res.status(400).json({ message: "interview_type must be 'online' or 'offline'" });
         }
 
-        if (amount === undefined || amount === null || isNaN(amount) || Number(amount) < 0) {
-            return res.status(400).json({ message: "Valid amount is required" });
-        }
-
         const startUtc = new Date(start_time_utc);
         const endUtc = new Date(end_time_utc);
 
@@ -52,6 +48,11 @@ exports.createBooking = async (req, res) => {
             return res.status(400).json({ message: "start_time_utc must be before end_time_utc" });
         }
 
+        // Fixed price for a mock interview — same for online and offline.
+        // NEVER trust a client-supplied total price; only the server decides this.
+        const BOOKING_PRICE = 299;
+        const bookingAmount = BOOKING_PRICE;
+
         let normalizedSkills = null;
         if (skills) {
             if (Array.isArray(skills)) {
@@ -61,10 +62,48 @@ exports.createBooking = async (req, res) => {
             }
         }
 
-        const paise = Math.round(Number(amount) * 100);
+        const user = await User.query().findById(candidate_id);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // purchased_credits_used here is only a REQUEST to apply credits.
+        // No deduction happens in this endpoint — actual deduction is deferred
+        // to payment/credit confirmation, so we never debit credits for a
+        // booking that's never actually paid for or confirmed.
+        const rawCreditsRequested = Number(purchased_credits_used);
+        const requestedCredits = Number.isFinite(rawCreditsRequested)
+            ? Math.max(0, Math.round(rawCreditsRequested))
+            : 0;
+        const availableCredits = Math.max(0, Number(user.purchased_credits ?? 0));
+
+        // Credits can never exceed what's available, or the fixed booking price.
+        const creditsToUse = Math.min(requestedCredits, availableCredits, bookingAmount);
+
+        // What's actually payable via Razorpay: fixed price minus credits applied.
+        const remainingAmount = Math.max(0, bookingAmount - creditsToUse);
+
+        // Cross-check the frontend-supplied `amount` against our own server-side
+        // calculation, so a stale/tampered client value is caught immediately
+        // instead of silently creating a mismatched Razorpay order.
+        if (amount !== undefined && amount !== null) {
+            if (isNaN(amount) || Number(amount) < 0) {
+                return res.status(400).json({ message: "Invalid amount" });
+            }
+            if (Math.round(Number(amount)) !== Math.round(remainingAmount)) {
+                return res.status(400).json({
+                    message: "Amount mismatch, please refresh and try again",
+                    expected_amount: remainingAmount,
+                    received_amount: Number(amount)
+                });
+            }
+        }
+
+        const shouldCreateRazorpayOrder = remainingAmount > 0;
+        const paise = Math.round(remainingAmount * 100);
 
         let order = null;
-        if (paise > 0) {
+        if (shouldCreateRazorpayOrder) {
             try {
                 order = await razorpay.orders.create({
                     amount: paise,
@@ -86,30 +125,84 @@ exports.createBooking = async (req, res) => {
             meeting_link: interview_type === "online" ? (meeting_link || null) : null,
             interview_type,
             job_role: job_role || null,
-            payment_status: paise > 0 ? "pending" : "confirmed",
+            // If credits fully cover the price, there's no Razorpay leg to verify —
+            // it needs an explicit credit-confirmation step (see confirmCreditBooking below)
+            // rather than being marked "confirmed" here.
+            payment_status: shouldCreateRazorpayOrder ? "pending" : "pending_credit_confirmation",
             resume_url: resume_url || null,
             experience_months: experience_months ? Number(experience_months) : 0,
             skills: normalizedSkills,
-            amount: Number(amount),
-            razorpay_order_id: order ? order.id : null
+            amount: bookingAmount,
+            razorpay_order_id: order ? order.id : null,
+            purchased_credits_used: creditsToUse
         });
 
-        if (purchased_credits_used && Number(purchased_credits_used) > 0) {
-            const creditsToUse = Number(purchased_credits_used);
-            await User.query().decrement("purchased_credits", creditsToUse).where({ user_id: candidate_id });
-        }
-        // Reward 5 bonus credits
-        await User.query().knex()('users')
-        .where({ user_id: candidate_id })
-        .increment('credits', 5);
+        // No credit deduction and no bonus-credit grant here.
+        // Credits are deducted only once payment (or credit-only confirmation)
+        // is actually verified, to avoid debiting a user for a booking that
+        // never gets paid for or confirmed.
+
         return res.status(201).json({ booking, order: order || null });
-        
+
     } catch (err) {
         console.error("createBooking error:", err);
         return res.status(500).json({ message: "Error creating mock interview booking" });
     }
 };
+exports.confirmCreditBooking = async (req, res) => {
+    try {
+        const candidate_id = req.user.user_id;
+        const { mock_interview_id } = req.body;
 
+        if (!mock_interview_id) {
+            return res.status(400).json({ message: "mock_interview_id is required" });
+        }
+
+        const booking = await MockInterview.query().findById(mock_interview_id);
+        if (!booking || booking.candidate_id !== candidate_id) {
+            return res.status(404).json({ message: "Mock interview booking not found" });
+        }
+
+        if (booking.payment_status === "confirmed") {
+            return res.status(409).json({ message: "Booking already confirmed" });
+        }
+
+        if (booking.payment_status !== "pending_credit_confirmation") {
+            return res.status(400).json({ message: "This booking requires Razorpay payment verification, not credit confirmation" });
+        }
+
+        const creditsToDeduct = Number(booking.purchased_credits_used || 0);
+        if (creditsToDeduct <= 0) {
+            return res.status(400).json({ message: "No credits associated with this booking" });
+        }
+
+        const currentUser = await User.query().findById(candidate_id);
+        if (!currentUser) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if ((currentUser.purchased_credits ?? 0) < creditsToDeduct) {
+            return res.status(400).json({
+                message: "Insufficient purchased credits",
+                available_purchased_credits: currentUser.purchased_credits ?? 0,
+                purchased_credits_requested: creditsToDeduct
+            });
+        }
+
+        await User.query().decrement("purchased_credits", creditsToDeduct).where({ user_id: candidate_id });
+
+        const updatedBooking = await MockInterview.query().patchAndFetchById(mock_interview_id, {
+            payment_status: "confirmed",
+            interview_status: "confirmed",
+            updated_at: new Date().toISOString()
+        });
+
+        return res.json({ message: "Booking confirmed via credits", booking: updatedBooking });
+    } catch (err) {
+        console.error("confirmCreditBooking error:", err);
+        return res.status(500).json({ message: "Error confirming credit booking" });
+    }
+};
 exports.fetchInterviews = async (req, res) => {
     try {
         const interviewer_id = Number(req.params.user_id);
@@ -238,6 +331,25 @@ exports.verifyPayment = async (req, res) => {
                 .patch({ payment_status: "failed", updated_at: new Date().toISOString() })
                 .where({ mock_interview_id });
             return res.status(400).json({ message: "Payment verification failed" });
+        }
+
+        if (booking.payment_status !== "confirmed" && Number(booking.purchased_credits_used || 0) > 0) {
+            const creditsToDeduct = Number(booking.purchased_credits_used || 0);
+            const currentUser = await User.query().findById(candidate_id);
+
+            if (!currentUser) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            if ((currentUser.purchased_credits ?? 0) < creditsToDeduct) {
+                return res.status(400).json({
+                    message: "Insufficient purchased credits",
+                    available_purchased_credits: currentUser.purchased_credits ?? 0,
+                    purchased_credits_requested: creditsToDeduct
+                });
+            }
+
+            await User.query().decrement("purchased_credits", creditsToDeduct).where({ user_id: candidate_id });
         }
 
         const updatedBooking = await MockInterview.query().patchAndFetchById(mock_interview_id, {
