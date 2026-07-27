@@ -128,6 +128,7 @@ exports.generateJdResume = async (req, res) => {
 
     if (session_id) {
       const { error } = await loadOwnedSession(session_id, user_id);
+      await AiSession.query().patch({ jd_text: jd_text.trim() }).where({ id: session_id });
       if (error) return res.status(error.status).json({ message: error.message });
     }
 

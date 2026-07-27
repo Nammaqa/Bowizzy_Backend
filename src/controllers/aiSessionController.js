@@ -42,7 +42,12 @@ exports.getSessionsByUser = async (req, res) => {
       .withGraphFetched("chats")
       .orderBy("created_at", "desc");
 
-    return res.json(sessions);
+    const normalizedSessions = sessions.map((session) => ({
+      ...session,
+      is_paid: Boolean(session.is_paid)
+    }));
+
+    return res.json(normalizedSessions);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error fetching sessions by user" });
@@ -62,7 +67,7 @@ exports.getSessionById = async (req, res) => {
       return res.status(404).json({ message: "Session not found" });
     }
 
-    return res.json(session);
+    return res.json(session ? { ...session, is_paid: Boolean(session.is_paid) } : null);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error fetching session" });
@@ -77,7 +82,10 @@ exports.getAllSessions = async (req, res) => {
       .where({ user_id })
       .withGraphFetched("chats");
 
-    return res.json(sessions);
+    return res.json(sessions.map((session) => ({
+      ...session,
+      is_paid: Boolean(session.is_paid)
+    })));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error fetching sessions" });
