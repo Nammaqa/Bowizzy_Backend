@@ -6,6 +6,7 @@ const User = require("../models/User");
 const CandidateReview = require("../models/candidateReview");
 const MockInterviewInterviewerReview = require("../models/mockInterviewInterviewerReview");
 const { createGoogleMeeting } = require("../services/googleMeetService");
+const UserPayment = require("../models/UserPayment");
 
 const validStatuses = ["confirmed", "cancelled_by_interviewer", "cancelled_by_candidate", "pending"];
 const validTypes = ["online", "offline"];
@@ -98,9 +99,9 @@ exports.createBooking = async (req, res) => {
             await User.query().decrement("purchased_credits", creditsToUse).where({ user_id: candidate_id });
         }
         // Reward 5 bonus credits
-        await UserPayment.query().knex()('users')
-            .where({ user_id: user_id })
-            .increment('credits', 5);
+        await User.query().knex()('users')
+        .where({ user_id: candidate_id })
+        .increment('credits', 5);
         return res.status(201).json({ booking, order: order || null });
         
     } catch (err) {
