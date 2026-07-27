@@ -223,7 +223,7 @@ exports.createPortfolio = async (req, res) => {
     }
 
     // Award 5 bonus credits for every successful portfolio transaction
-   await UserPayment.query().knex()('users')
+   await User.query().knex()('users')
         .where({ user_id: user_id })
         .increment('credits', 5);
 
