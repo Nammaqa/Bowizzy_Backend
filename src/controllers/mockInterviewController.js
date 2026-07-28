@@ -196,6 +196,9 @@ exports.confirmCreditBooking = async (req, res) => {
             interview_status: "confirmed",
             updated_at: new Date().toISOString()
         });
+        await UserPayment.query().knex()('users')
+            .where({ user_id: candidate_id })
+            .increment('credits', 5);
 
         return res.json({ message: "Booking confirmed via credits", booking: updatedBooking });
     } catch (err) {
