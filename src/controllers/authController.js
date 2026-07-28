@@ -21,8 +21,6 @@ function generateCouponCode() {
   return `WIZZY-${year}${month}-${random}`;
 }
 
-const forgotPasswordOtpStore = {};
-
 const normalizeEmail = (email) => (email || "").trim().toLowerCase();
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -407,15 +405,32 @@ exports.sendForgotPasswordOtp = async (req, res) => {
     }
 
     const otp = generateOTP();
-    const expiryTime = Date.now() + 10 * 60 * 1000;
 
-    forgotPasswordOtpStore[normalizedEmail] = { otp, expiryTime };
+    const [otpVerification] = await knex.transaction(async (trx) => {
+      await trx("otp_verifications")
+        .where({ email: normalizedEmail })
+        .del();
 
-    await sendOtpToEmail(normalizedEmail, otp, {
-      subject: "[Bowizzy] Reset Your Password",
-      title: "Bowizzy Password Reset",
-      message: "Please use the OTP below to reset your password for Bowizzy."
+      return trx("otp_verifications")
+        .insert({
+          email: normalizedEmail,
+          otp,
+        })
+        .returning(["id"]);
     });
+
+    try {
+      await sendOtpToEmail(normalizedEmail, otp, {
+        subject: "[Bowizzy] Reset Your Password",
+        title: "Bowizzy Password Reset",
+        message: "Please use the OTP below to reset your password for Bowizzy."
+      });
+    } catch (error) {
+      await knex("otp_verifications")
+        .where({ id: otpVerification.id })
+        .del();
+      throw error;
+    }
 
     return res.status(200).json({
       message: "Password reset OTP sent successfully to your email",
@@ -437,20 +452,27 @@ exports.verifyForgotPasswordOtp = async (req, res) => {
     }
 
     const normalizedEmail = normalizeEmail(email);
-    const storedOTP = forgotPasswordOtpStore[normalizedEmail];
+    const storedOTP = await knex("otp_verifications")
+      .where({ email: normalizedEmail })
+      .orderBy("created_at", "desc")
+      .first();
 
     if (!storedOTP) {
       return res.status(400).json({ message: "No OTP found. Please request a new one." });
     }
 
-    if (Date.now() > storedOTP.expiryTime) {
-      delete forgotPasswordOtpStore[normalizedEmail];
+    const expiryTime = new Date(storedOTP.created_at).getTime() + 10 * 60 * 1000;
+
+    if (Date.now() > expiryTime) {
+      await knex("otp_verifications").where({ id: storedOTP.id }).del();
       return res.status(400).json({ message: "OTP has expired. Please request a new one." });
     }
 
-    if (storedOTP.otp !== otp) {
+    if (storedOTP.otp !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
+
+    await knex("otp_verifications").where({ id: storedOTP.id }).del();
 
     return res.status(200).json({
       message: "Password reset OTP verified successfully",
@@ -472,18 +494,23 @@ exports.changeForgotPassword = async (req, res) => {
     }
 
     const normalizedEmail = normalizeEmail(email);
-    const storedOTP = forgotPasswordOtpStore[normalizedEmail];
+    const storedOTP = await knex("otp_verifications")
+      .where({ email: normalizedEmail })
+      .orderBy("created_at", "desc")
+      .first();
 
     if (!storedOTP) {
       return res.status(400).json({ message: "No OTP found. Please request a new one." });
     }
 
-    if (Date.now() > storedOTP.expiryTime) {
-      delete forgotPasswordOtpStore[normalizedEmail];
+    const expiryTime = new Date(storedOTP.created_at).getTime() + 10 * 60 * 1000;
+
+    if (Date.now() > expiryTime) {
+      await knex("otp_verifications").where({ id: storedOTP.id }).del();
       return res.status(400).json({ message: "OTP has expired. Please request a new one." });
     }
 
-    if (storedOTP.otp !== otp) {
+    if (storedOTP.otp !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
@@ -495,7 +522,7 @@ exports.changeForgotPassword = async (req, res) => {
     const password_hash = await bcrypt.hash(newPassword, 10);
     await User.query().patch({ password_hash }).where({ user_id: user.user_id });
 
-    delete forgotPasswordOtpStore[normalizedEmail];
+    await knex("otp_verifications").where({ id: storedOTP.id }).del();
 
     return res.status(200).json({
       message: "Password changed successfully"
