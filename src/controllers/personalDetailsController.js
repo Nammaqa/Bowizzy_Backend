@@ -1,4 +1,5 @@
 const PersonalDetails = require("../models/PersonalDetails");
+const knex = require("../db/knex");
 
 exports.create = async (req, res) => {
   try {
@@ -119,12 +120,11 @@ exports.getAll = async (req, res) => {
   }
 };
 
-// Store OTPs in memory (with expiry)
-const otpStore = {};
-
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
+
+const normalizeEmail = (email) => (email || "").trim().toLowerCase();
 
 const sendOTPEmail = async (email, otp) => {
   const mailServiceUrl = "https://bowizzy-mail-service.vercel.app/api/send-email";
@@ -279,15 +279,30 @@ exports.sendOTP = async (req, res) => {
       return res.status(400).json({ message: "User email not found" });
     }
 
-    // Generate OTP
+    const normalizedEmail = normalizeEmail(user.email);
     const otp = generateOTP();
-    const expiryTime = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    // Store OTP
-    otpStore[user_id] = { otp, expiryTime };
+    const [otpVerification] = await knex.transaction(async (trx) => {
+      await trx("otp_verifications")
+        .where({ email: normalizedEmail })
+        .del();
 
-    // Send email
-    await sendOTPEmail(user.email, otp);
+      return trx("otp_verifications")
+        .insert({
+          email: normalizedEmail,
+          otp,
+        })
+        .returning(["id"]);
+    });
+
+    try {
+      await sendOTPEmail(normalizedEmail, otp);
+    } catch (error) {
+      await knex("otp_verifications")
+        .where({ id: otpVerification.id })
+        .del();
+      throw error;
+    }
 
     res.status(200).json({
       message: "OTP sent successfully to your email",
@@ -309,23 +324,36 @@ exports.verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "OTP is required" });
     }
 
-    const storedOTP = otpStore[user_id];
+    const User = require("../models/User");
+    const user = await User.query().findById(user_id);
+
+    if (!user?.email) {
+      return res.status(404).json({ message: "User email not found" });
+    }
+
+    const normalizedEmail = normalizeEmail(user.email);
+    const storedOTP = await knex("otp_verifications")
+      .where({ email: normalizedEmail })
+      .orderBy("created_at", "desc")
+      .first();
 
     if (!storedOTP) {
       return res.status(400).json({ message: "No OTP found. Please request a new one." });
     }
 
-    if (Date.now() > storedOTP.expiryTime) {
-      delete otpStore[user_id];
+    const expiryTime = new Date(storedOTP.created_at).getTime() + 10 * 60 * 1000;
+
+    if (Date.now() > expiryTime) {
+      await knex("otp_verifications").where({ id: storedOTP.id }).del();
       return res.status(400).json({ message: "OTP has expired. Please request a new one." });
     }
 
-    if (storedOTP.otp !== otp) {
+    if (storedOTP.otp !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
     // OTP verified successfully, delete it
-    delete otpStore[user_id];
+    await knex("otp_verifications").where({ id: storedOTP.id }).del();
 
     res.status(200).json({ message: "OTP verified successfully" });
   } catch (err) {
@@ -359,23 +387,36 @@ exports.updatePersonalDetailsWithOTP = async (req, res) => {
     } = personalDetails;
 
     // Verify OTP
-    const storedOTP = otpStore[user_id];
+    const User = require("../models/User");
+    const user = await User.query().findById(user_id);
+
+    if (!user?.email) {
+      return res.status(404).json({ message: "User email not found" });
+    }
+
+    const normalizedEmail = normalizeEmail(user.email);
+    const storedOTP = await knex("otp_verifications")
+      .where({ email: normalizedEmail })
+      .orderBy("created_at", "desc")
+      .first();
 
     if (!storedOTP) {
       return res.status(400).json({ message: "No OTP found. Please request a new one." });
     }
 
-    if (Date.now() > storedOTP.expiryTime) {
-      delete otpStore[user_id];
+    const expiryTime = new Date(storedOTP.created_at).getTime() + 10 * 60 * 1000;
+
+    if (Date.now() > expiryTime) {
+      await knex("otp_verifications").where({ id: storedOTP.id }).del();
       return res.status(400).json({ message: "OTP has expired. Please request a new one." });
     }
 
-    if (storedOTP.otp !== otp) {
+    if (storedOTP.otp !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
     // OTP verified, proceed with update
-    delete otpStore[user_id];
+    await knex("otp_verifications").where({ id: storedOTP.id }).del();
 
     // Get the personal details record for this user
     const personalDetailsRecord = await PersonalDetails.query().findOne({ user_id });

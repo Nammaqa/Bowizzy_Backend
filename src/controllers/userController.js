@@ -174,8 +174,14 @@ exports.redeemEnhanceWithPurchasedCredits = async (req, res) => {
 exports.claimWelcomeCredit = async (req, res) => {
   const trx = await User.startTransaction();
   try {
-    const user_id = req.user && req.user.user_id; 
-    const user = await User.query(trx).findById(user_id);
+    const user_id = req.user && req.user.user_id;
+    const bonusCredits = Number(process.env.WELCOME_BONUS_COINS || 25);
+
+    if (!Number.isFinite(bonusCredits) || bonusCredits <= 0) {
+      throw new Error("WELCOME_BONUS_COINS must be a positive number");
+    }
+
+    const user = await User.query(trx).findById(user_id).forUpdate();
     if (!user) {
       await trx.rollback();
       return res.status(404).json({ message: "User not found" });
@@ -184,16 +190,25 @@ exports.claimWelcomeCredit = async (req, res) => {
       await trx.rollback();
       return res.status(400).json({ message: "Welcome bonus already redeemed" });
     }
-    const amount = process.env.WELCOME_BONUS_COINS || 25;
-    await trx('credit_transactions').insert({
+
+    await trx("credit_transactions").insert({
       user_id,
-      credits:amount,
+      credits: bonusCredits,
       transaction_type: "welcome_bonus",
       description: "Welcome bonus coins for new users"
     });
-    await User.query(trx).findById(user_id).patch({ welcomeBonusRedeemed: true, credits: user.credits + amount });
+
+    const updatedUser = await User.query(trx)
+      .patchAndFetchById(user_id, {
+        welcomeBonusRedeemed: true,
+        credits: trx.raw("?? + ?", ["credits", bonusCredits])
+      });
+
     await trx.commit();
-    return res.json({ message: "Welcome bonus claimed successfully" });
+    return res.json({
+      message: "Welcome bonus claimed successfully",
+      credits: Number(updatedUser.credits)
+    });
   } catch (err) {
     await trx.rollback();
     console.error("Error claiming welcome bonus:", err);
