@@ -44,17 +44,7 @@ exports.createOrder = async (req, res) => {
       }
 
       // ✅ ADD 5 BONUS CREDITS FOR FULLY CREDIT-COVERED (BYPASSED) ORDERS
-      await UserPayment.query().knex()('credit_transactions').insert({
-        user_id,
-        credits: 5,
-        transaction_type: "welcome_bonus",
-        description: `Bonus credits for bypassed payment ${order_id}`,
-        reference_id: null
-      });
-
-      await UserPayment.query().knex()('users')
-        .where({ user_id })
-        .increment('credits', 5);
+      await awardBonusCredits(user_id, order_id, `Bonus credits for bypassed payment ${order_id}`);
     } else {
       // Razorpay needs paise
       const paise = Math.round(parsedAmount * 100);
@@ -181,17 +171,7 @@ exports.verifyPayment = async (req, res) => {
 
     // ✅ ADD 5 BONUS CREDITS FOR EVERY VERIFIED PAYMENT
     if (userId) {
-      await UserPayment.query().knex()('credit_transactions').insert({
-        user_id: userId,
-        credits: 5,
-        transaction_type: "welcome_bonus",
-        description: `Bonus credits for verified payment ${razorpay_order_id}`,
-        reference_id: null
-      });
-
-      await UserPayment.query().knex()('users')
-        .where({ user_id: userId })
-        .increment('credits', 5);
+      await awardBonusCredits(userId, razorpay_order_id, `Bonus credits for verified payment ${razorpay_order_id}`);
     }
 
     return res.json({
@@ -210,10 +190,15 @@ exports.handleWebhook = async (req, res) => {
 
     if (event.event === "payment.captured") {
       const payment = event.payload.payment.entity;
+      const paymentRecord = await UserPayment.query().findOne({ razorpay_payment_id: payment.id });
 
-      await UserPayment.query()
-        .patch({ status: "success" })
-        .where({ razorpay_payment_id: payment.id });
+      if (paymentRecord) {
+        await UserPayment.query()
+          .patch({ status: "success" })
+          .where({ razorpay_payment_id: payment.id });
+
+        await awardBonusCredits(paymentRecord.user_id, paymentRecord.razorpay_order_id || payment.id, `Bonus credits for captured payment ${payment.id}`);
+      }
     }
 
     if (event.event === "payment.failed") {
