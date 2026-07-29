@@ -9,17 +9,16 @@ const awardBonusCredits = async (userId, referenceId, description) => {
 
   const knex = UserPayment.query().knex();
 
-  await knex("credit_transactions").insert({
-    user_id: userId,
-    credits: 5,
-    transaction_type: "welcome_bonus",
-    description: description || `Bonus credits for portfolio payment ${referenceId}`,
-    reference_id: referenceId || null,
-  });
-
-  await knex("users")
+  // await knex("credit_transactions").insert({
+  //   user_id: userId,
+  //   credits: 5,
+  //   transaction_type: "welcome_bonus",
+  //   description: description || `Bonus credits for portfolio payment ${referenceId}`,
+  //   reference_id: referenceId || null,
+  // });
+  await UserPayment.query().knex()('users')
     .where({ user_id: userId })
-    .increment("credits", 5);
+    .increment('credits', 5);
 };
 
 // CREATE ORDER
