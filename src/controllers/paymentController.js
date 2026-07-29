@@ -155,13 +155,13 @@ exports.verifyPayment = async (req, res) => {
     // ✅ ADD COIN TRANSACTION IF CREDITS APPLIED > 0
     const bonusToDeduct = Math.round(payment.bonus_credits_applied ? Number(payment.bonus_credits_applied) : (credits_applied ? Number(credits_applied) : 0));
     if (bonusToDeduct > 0 && payment) {
-      await UserPayment.query().knex()('credit_transactions').insert({
-        user_id: payment.user_id,
-        credits: bonusToDeduct,
-        transaction_type: "credit_applied",
-        description: `Credits applied from payment ${razorpay_order_id}`,
-        reference_id: null
-      });
+      // await UserPayment.query().knex()('credit_transactions').insert({
+      //   user_id: payment.user_id,
+      //   credits: bonusToDeduct,
+      //   transaction_type: "credit_applied",
+      //   description: `Credits applied from payment ${razorpay_order_id}`,
+      //   reference_id: null
+      // });
 
       // ✅ DECREASE CREDITS FROM USER TABLE
       await UserPayment.query().knex()('users')
