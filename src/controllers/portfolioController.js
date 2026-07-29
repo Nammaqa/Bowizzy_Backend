@@ -4,6 +4,24 @@ const Portfolio = require("../models/Portfolio");
 const UserPayment = require("../models/UserPayment");
 const User = require("../models/User");
 
+const awardBonusCredits = async (userId, referenceId, description) => {
+  if (!userId) return;
+
+  const knex = UserPayment.query().knex();
+
+  await knex("credit_transactions").insert({
+    user_id: userId,
+    credits: 5,
+    transaction_type: "welcome_bonus",
+    description: description || `Bonus credits for portfolio payment ${referenceId}`,
+    reference_id: referenceId || null,
+  });
+
+  await knex("users")
+    .where({ user_id: userId })
+    .increment("credits", 5);
+};
+
 // CREATE RAZORPAY ORDER FOR PORTFOLIO
 exports.createOrder = async (req, res) => {
   try {
@@ -223,9 +241,7 @@ exports.createPortfolio = async (req, res) => {
     }
 
     // Award 5 bonus credits for every successful portfolio transaction
-   await User.query().knex()('users')
-        .where({ user_id: user_id })
-        .increment('credits', 5);
+    await awardBonusCredits(user_id, portfolio.portfolio_id, `Bonus credits for portfolio creation ${portfolio.portfolio_id}`);
 
     return res.status(201).json({
       message: "Portfolio created successfully",
