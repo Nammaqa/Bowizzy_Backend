@@ -4,6 +4,23 @@ const UserPayment = require("../models/UserPayment");
 const UserSubscription = require("../models/UserSubscription");
 
 
+const awardBonusCredits = async (userId, referenceId, description) => {
+  if (!userId) return;
+
+  const knex = UserPayment.query().knex();
+
+  await knex("credit_transactions").insert({
+    user_id: userId,
+    credits: 5,
+    transaction_type: "welcome_bonus",
+    description: description || `Bonus credits for portfolio payment ${referenceId}`,
+    reference_id: referenceId || null,
+  });
+
+  await knex("users")
+    .where({ user_id: userId })
+    .increment("credits", 5);
+};
 
 // CREATE ORDER
 exports.createOrder = async (req, res) => {
