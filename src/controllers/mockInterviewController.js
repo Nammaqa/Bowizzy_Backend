@@ -196,6 +196,9 @@ exports.confirmCreditBooking = async (req, res) => {
             interview_status: "confirmed",
             updated_at: new Date().toISOString()
         });
+        await UserPayment.query().knex()('users')
+            .where({ user_id: candidate_id })
+            .increment('credits', 5);
 
         return res.json({ message: "Booking confirmed via credits", booking: updatedBooking });
     } catch (err) {
@@ -350,6 +353,7 @@ exports.verifyPayment = async (req, res) => {
             }
 
             await User.query().decrement("purchased_credits", creditsToDeduct).where({ user_id: candidate_id });
+
         }
 
         const updatedBooking = await MockInterview.query().patchAndFetchById(mock_interview_id, {
@@ -359,6 +363,9 @@ exports.verifyPayment = async (req, res) => {
             razorpay_signature,
             updated_at: new Date().toISOString()
         });
+        await UserPayment.query().knex()('users')
+            .where({ user_id: candidate_id })
+            .increment('credits', 5);
 
         return res.json({ message: "Payment verified", booking: updatedBooking });
     } catch (err) {
