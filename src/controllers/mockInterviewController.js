@@ -921,3 +921,22 @@ exports.submitInterviewerReview = async (req, res) => {
         return res.status(500).json({ message: "Error submitting interviewer review" });
     }
 };
+
+exports.deletePendingBookings = async (req, res) => {
+    const { user_id } = req.params;
+
+    try {
+        const deletedCount = await MockInterview.query()
+            .delete()
+            .where('candidate_id', user_id)
+            .andWhere('payment_status', 'pending')
+            .andWhere('interviewer_id', null)
+
+        return res.status(200).json({
+            message: `Deleted ${deletedCount} pending booking(s) successfully.`
+        });
+    } catch (err) {
+        console.error("deletePendingBookings error:", err);
+        return res.status(500).json({ message: "Error deleting pending bookings" });
+    }
+};
