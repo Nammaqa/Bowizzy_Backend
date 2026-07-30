@@ -8,6 +8,7 @@ router.get("/admin/interviewers/pending", auth, controller.getPendingInterviewer
 router.get("/admin/interviews", auth, controller.getAllInterviews);
 router.get("/admin/priority-interviews", auth, controller.getPriorityInterviews);
 router.patch("/admin/interviewers/:user_id/accept", auth, controller.acceptInterviewer);
+router.patch("/admin/interviewers/:user_id/ban", auth, controller.banInterviewer);
 router.put("/admin/users/:user_id", controller.updateUser);
 router.delete("/admin/users/:user_id", controller.deleteUserAndAssociations);
 

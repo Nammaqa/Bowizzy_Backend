@@ -20,6 +20,7 @@ const UserSubscription = require("../models/UserSubscription");
 const InterviewSlot = require("../models/interviewSlot");
 const UserPayment = require("../models/UserPayment");
 const MockInterview = require("../models/MockInterview");
+const MockInterviewInterviewerReview = require("../models/mockInterviewInterviewerReview");
 
 exports.deleteUserAndAssociations = async (req, res) => {
   try {
@@ -151,7 +152,32 @@ exports.getAllInterviews = async (req, res) => {
     const list = await MockInterview.query()
       .orderBy("created_at", "desc");
 
-    return res.json(list);
+    const mockInterviewIds = list.map((mi) => mi.mock_interview_id);
+
+    const [candidateReviews, interviewerReviews] = mockInterviewIds.length > 0
+      ? await Promise.all([
+          CandidateReview.query().whereIn("mock_interview_id", mockInterviewIds),
+          MockInterviewInterviewerReview.query().whereIn("mock_interview_id", mockInterviewIds)
+        ])
+      : [[], []];
+
+    const candidateReviewMap = candidateReviews.reduce((acc, review) => {
+      acc[review.mock_interview_id] = review;
+      return acc;
+    }, {});
+
+    const interviewerReviewMap = interviewerReviews.reduce((acc, review) => {
+      acc[review.mock_interview_id] = review;
+      return acc;
+    }, {});
+
+    const enriched = list.map((mi) => ({
+      ...mi,
+      candidate_review: candidateReviewMap[mi.mock_interview_id] || null,
+      interviewer_review: interviewerReviewMap[mi.mock_interview_id] || null
+    }));
+
+    return res.json(enriched);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error fetching all interviews" });
@@ -217,5 +243,35 @@ exports.acceptInterviewer = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error accepting interviewer" });
+  }
+};
+
+exports.banInterviewer = async (req, res) => {
+  try {
+    if (req.user.user_type !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const { user_id } = req.params;
+    const { is_banned } = req.body;
+
+    if (typeof is_banned !== "boolean") {
+      return res.status(400).json({ message: "is_banned must be a boolean" });
+    }
+
+    const updated = await User.query()
+      .patch({ is_interviewer_banned: is_banned })
+      .where({ user_id, user_type: "interviewer" });
+
+    if (updated === 0) {
+      return res.status(404).json({ message: "Interviewer not found or not an interviewer" });
+    }
+
+    return res.json({
+      message: is_banned ? "Interviewer banned successfully" : "Interviewer unbanned successfully"
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error updating interviewer ban status" });
   }
 };
