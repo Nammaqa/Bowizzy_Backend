@@ -478,9 +478,9 @@ exports.cancelBooking = async (req, res) => {
 
                 // Get current user credits and add refund
                 const user = await User.query().findById(booking.candidate_id);
-                const currentCredits = Number(user.credits || 0);
+                const currentCredits = Number(user.purchased_credits || 0);
 
-                await User.query().patch({ credits: currentCredits + refundAmount })
+                await User.query().patch({ purchased_credits: currentCredits + refundAmount })
                     .where("user_id", booking.candidate_id);
             }
         } else if (booking.interviewer_id === userId) {
