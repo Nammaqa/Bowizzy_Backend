@@ -716,7 +716,7 @@ exports.isInterviewer = async (req, res) => {
         const user_id = req.user.user_id;
 
         const user = await User.query()
-            .select("user_id", "user_type", "is_interviewer_verified")
+            .select("user_id", "user_type", "is_interviewer_verified", "is_interviewer_banned")
             .findById(user_id);
 
         if (!user) {
@@ -732,7 +732,8 @@ exports.isInterviewer = async (req, res) => {
             is_interviewer: isInterviewer,
             is_verified_interviewer: isVerifiedInterviewer,
             user_type: user.user_type,
-            is_interviewer_verified: user.is_interviewer_verified
+            is_interviewer_verified: user.is_interviewer_verified,
+            is_banned: user.is_interviewer_banned === true || user.is_interviewer_banned === "true"
         });
     } catch (err) {
         console.error("isInterviewer error:", err);
