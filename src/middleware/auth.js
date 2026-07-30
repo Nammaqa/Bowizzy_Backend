@@ -15,7 +15,11 @@ module.exports = async (req, res, next) => {
       return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
-    if (req.params.user_id && String(req.params.user_id) !== String(decoded.user_id)) {
+    if (
+      req.params.user_id &&
+      decoded.user_type !== "admin" &&
+      String(req.params.user_id) !== String(decoded.user_id)
+    ) {
       return res.status(403).json({ message: "Forbidden" });
     }
 

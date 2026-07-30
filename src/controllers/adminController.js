@@ -81,6 +81,7 @@ exports.getAllUsers = async (req, res) => {
         "users.user_type",
         "users.is_interviewer_verified",
         "users.is_verified",
+        "users.is_interviewer_banned",
         "users.created_at",
         "users.updated_at"
       )
@@ -109,6 +110,7 @@ exports.getPendingInterviewers = async (req, res) => {
         "users.user_type",
         "users.is_interviewer_verified",
         "users.is_verified",
+        "users.is_interviewer_banned",
         "users.created_at",
         "users.updated_at"
       )
@@ -261,7 +263,7 @@ exports.banInterviewer = async (req, res) => {
 
     const updated = await User.query()
       .patch({ is_interviewer_banned: is_banned })
-      .where({ user_id, user_type: "interviewer" });
+      .where({ user_id, user_type: "regular" });
 
     if (updated === 0) {
       return res.status(404).json({ message: "Interviewer not found or not an interviewer" });

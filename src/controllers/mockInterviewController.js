@@ -405,7 +405,23 @@ exports.getBookingsByUser = async (req, res) => {
             })
             .orderBy("created_at", "desc");
 
-        return res.json(bookings);
+        const mockInterviewIds = bookings.map((b) => b.mock_interview_id);
+
+        const candidateReviews = mockInterviewIds.length > 0
+            ? await CandidateReview.query().whereIn("mock_interview_id", mockInterviewIds)
+            : [];
+
+        const candidateReviewMap = candidateReviews.reduce((acc, review) => {
+            acc[review.mock_interview_id] = review;
+            return acc;
+        }, {});
+
+        const enrichedBookings = bookings.map((b) => ({
+            ...b,
+            candidate_review: candidateReviewMap[b.mock_interview_id] || null
+        }));
+
+        return res.json(enrichedBookings);
     } catch (err) {
         console.error("getBookingsByUser error:", err);
         return res.status(500).json({ message: "Error fetching bookings" });
@@ -738,6 +754,30 @@ exports.isInterviewer = async (req, res) => {
     } catch (err) {
         console.error("isInterviewer error:", err);
         return res.status(500).json({ message: "Error checking interviewer status" });
+    }
+};
+
+exports.checkInterviewerBanStatus = async (req, res) => {
+    try {
+        const user_id = req.user.user_id;
+
+        const user = await User.query()
+            .select("user_id", "is_interviewer_banned")
+            .findById(user_id);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        const isBanned = user.is_interviewer_banned === true || user.is_interviewer_banned === "true";
+
+        return res.json({
+            user_id,
+            is_banned: isBanned
+        });
+    } catch (err) {
+        console.error("checkInterviewerBanStatus error:", err);
+        return res.status(500).json({ message: "Error checking interviewer ban status" });
     }
 };
 
