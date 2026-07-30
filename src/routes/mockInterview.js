@@ -10,6 +10,7 @@ router.get("/users/:user_id/mock-interview/bookings", auth, controller.getBookin
 router.get("/users/:user_id/mock-interview/bookings/:id", auth, controller.getBookingById);
 router.put("/users/:user_id/mock-interview/bookings/:id/cancel", auth, controller.cancelBooking);
 router.put("/users/:user_id/mock-interview/bookings/:id/accept", auth, controller.acceptBooking);
+router.delete("/users/:user_id/mock-interview/bookings/delete-pending", auth, controller.deletePendingBookings);
 router.get("/users/:user_id/mock-interview/accepted-interviews", auth, controller.getAcceptedInterviews);
 router.post("/users/:user_id/mock-interview/candidate-review", auth, controller.submitCandidateReview);
 router.post("/users/:user_id/mock-interview/interviewer-review", auth, controller.submitInterviewerReview);
