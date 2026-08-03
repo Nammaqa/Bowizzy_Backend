@@ -312,6 +312,29 @@ exports.getPortfolioByIdPublic = async (req, res) => {
   }
 };
 
+// GET PORTFOLIO BY DOMAIN (PUBLIC)
+exports.getPortfolioByDomain = async (req, res) => {
+  try {
+    const { domain } = req.params;
+
+    if (!domain) {
+      return res.status(400).json({ message: "Domain is required" });
+    }
+
+    const portfolio = await Portfolio.query().findOne({ domain });
+
+    if (!portfolio) {
+      return res.status(404).json({ message: "Portfolio not found" });
+    }
+
+    return res.json(portfolio);
+
+  } catch (err) {
+    console.error("Portfolio getPortfolioByDomain error:", err);
+    return res.status(500).json({ message: "Error fetching portfolio" });
+  }
+};
+
 // UPDATE PORTFOLIO
 exports.updatePortfolio = async (req, res) => {
   try {
