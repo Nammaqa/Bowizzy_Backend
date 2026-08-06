@@ -1,16 +1,16 @@
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = "gpt-4o-mini";
 
 async function callGroq(systemPrompt, userPrompt) {
-  const response = await fetch(GROQ_API_URL, {
+  const response = await fetch(OPENAI_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: OPENAI_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
