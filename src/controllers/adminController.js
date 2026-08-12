@@ -82,6 +82,7 @@ exports.getAllUsers = async (req, res) => {
         "users.is_interviewer_verified",
         "users.is_verified",
         "users.is_interviewer_banned",
+        "users.review_status",
         "users.created_at",
         "users.updated_at"
       )
@@ -111,6 +112,7 @@ exports.getPendingInterviewers = async (req, res) => {
         "users.is_interviewer_verified",
         "users.is_verified",
         "users.is_interviewer_banned",
+        "users.review_status",
         "users.created_at",
         "users.updated_at"
       )
@@ -275,5 +277,33 @@ exports.banInterviewer = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error updating interviewer ban status" });
+  }
+};
+
+exports.updateInterviewerReviewStatus = async (req, res) => {
+  try {
+    if (req.user.user_type !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const { user_id } = req.params;
+    const { review_status } = req.body;
+
+    if (!["active", "under_review"].includes(review_status)) {
+      return res.status(400).json({ message: "review_status must be 'active' or 'under_review'" });
+    }
+
+    const updated = await User.query()
+      .patch({ review_status })
+      .where({ user_id, user_type: "regular" });
+
+    if (updated === 0) {
+      return res.status(404).json({ message: "Interviewer not found or not an interviewer" });
+    }
+
+    return res.json({ message: `Interviewer review status updated to ${review_status}` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error updating interviewer review status" });
   }
 };
