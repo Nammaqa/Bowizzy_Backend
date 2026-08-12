@@ -762,7 +762,7 @@ exports.checkInterviewerBanStatus = async (req, res) => {
         const user_id = req.user.user_id;
 
         const user = await User.query()
-            .select("user_id", "is_interviewer_banned")
+            .select("user_id", "is_interviewer_banned", "review_status")
             .findById(user_id);
 
         if (!user) {
@@ -773,7 +773,8 @@ exports.checkInterviewerBanStatus = async (req, res) => {
 
         return res.json({
             user_id,
-            is_banned: isBanned
+            is_banned: isBanned,
+            review_status: user.review_status
         });
     } catch (err) {
         console.error("checkInterviewerBanStatus error:", err);
