@@ -484,6 +484,62 @@ exports.verifyForgotPasswordOtp = async (req, res) => {
   }
 };
 
+exports.validateForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        message: "Email and OTP are required",
+        valid: false
+      });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const storedOTP = await knex("otp_verifications")
+      .where({ email: normalizedEmail })
+      .orderBy("created_at", "desc")
+      .first();
+
+    if (!storedOTP) {
+      return res.status(400).json({
+        message: "No OTP found. Please request a new one.",
+        valid: false
+      });
+    }
+
+    const expiryTime = new Date(storedOTP.created_at).getTime() + 10 * 60 * 1000;
+
+    if (Date.now() > expiryTime) {
+      await knex("otp_verifications").where({ id: storedOTP.id }).del();
+      return res.status(400).json({
+        message: "OTP has expired. Please request a new one.",
+        valid: false,
+        expired: true
+      });
+    }
+
+    if (storedOTP.otp !== String(otp)) {
+      return res.status(400).json({
+        message: "Invalid OTP",
+        valid: false
+      });
+    }
+
+    return res.status(200).json({
+      message: "OTP is valid",
+      valid: true,
+      email: normalizedEmail
+    });
+  } catch (err) {
+    console.error("Validate forgot password OTP Error:", err);
+    return res.status(500).json({
+      message: "Failed to validate OTP",
+      valid: false
+    });
+  }
+};
+
 exports.changeForgotPassword = async (req, res) => {
   try {
     const { email, otp, new_password, password } = req.body;
