@@ -50,6 +50,7 @@ const adminRouter = require("./routes/admin");
 const creditsRouter = require("./routes/credits");
 const aiSessionRouter = require("./routes/aiSession");
 const aiChatRouter = require("./routes/aiChat");
+const aiEnhanceRouter = require("./routes/aiEnhance");
 const portfolioRouter = require("./routes/portfolio");
 app.use("/payment", require("./routes/payment"));
 app.use("/api/terms", require("./routes/termsConditionRoutes"));
@@ -79,6 +80,7 @@ app.use("/", interviewerReviewRouter);
 app.use("/", userVerificationRequest);
 app.use("/", aiSessionRouter);
 app.use("/", aiChatRouter);
+app.use("/", aiEnhanceRouter);
 app.use("/", portfolioRouter);
 
 app.get("/", (req, res) => {
