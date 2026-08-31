@@ -10,6 +10,7 @@ router.get("/admin/priority-interviews", auth, controller.getPriorityInterviews)
 router.patch("/admin/interviewers/:user_id/accept", auth, controller.acceptInterviewer);
 router.patch("/admin/interviewers/:user_id/ban", auth, controller.banInterviewer);
 router.patch("/admin/interviewers/:user_id/review-status", auth, controller.updateInterviewerReviewStatus);
+router.patch("/account/:user_id/review-status", auth, controller.updateInterviewerReviewStatus);
 router.put("/admin/users/:user_id", controller.updateUser);
 router.delete("/admin/users/:user_id", controller.deleteUserAndAssociations);
 

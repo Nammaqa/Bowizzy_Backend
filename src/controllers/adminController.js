@@ -282,28 +282,65 @@ exports.banInterviewer = async (req, res) => {
 
 exports.updateInterviewerReviewStatus = async (req, res) => {
   try {
-    if (req.user.user_type !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
     const { user_id } = req.params;
     const { review_status } = req.body;
 
-    if (!["active", "under_review"].includes(review_status)) {
-      return res.status(400).json({ message: "review_status must be 'active' or 'under_review'" });
+    const requesterId   = req.user?.user_id;
+    const requesterType = req.user?.user_type;
+
+    // Defensive: if the token payload is missing user_id, fail loudly
+    // instead of silently 403-ing.
+    if (!requesterId) {
+      return res.status(401).json({
+        message: "Invalid session payload. Please log in again."
+      });
     }
 
-    const updated = await User.query()
-      .patch({ review_status })
-      .where({ user_id, user_type: "regular" });
+    const isAdmin      = requesterType === "admin";
+    const isSelfUpdate = String(user_id) === String(requesterId);
 
-    if (updated === 0) {
-      return res.status(404).json({ message: "Interviewer not found or not an interviewer" });
+    if (!isAdmin && !isSelfUpdate) {
+      return res.status(403).json({
+        message: "You can only change the review status of your own account."
+      });
     }
 
-    return res.json({ message: `Interviewer review status updated to ${review_status}` });
+    const ALLOWED_STATUSES = ["active", "under_review"];
+    if (!ALLOWED_STATUSES.includes(review_status)) {
+      return res.status(400).json({
+        message: "review_status must be 'active' or 'under_review'"
+      });
+    }
+
+
+    // Look the user up first so we can distinguish "no such user"
+    // from "nothing changed". The old code's `user_type: 'regular'`
+    // filter caused a misleading 404 for any other user_type.
+    const targetUser = await User.query().findById(user_id);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (targetUser.review_status === review_status) {
+      return res.json({
+        message: `Account is already ${review_status}`,
+        user_id: targetUser.user_id,
+        review_status
+      });
+    }
+
+    await User.query().findById(user_id).patch({ review_status });
+
+    return res.json({
+      message:
+        review_status === "under_review"
+          ? "Account has been placed under review"
+          : "Account has been reactivated",
+      user_id: targetUser.user_id,
+      review_status
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error updating interviewer review status" });
+    console.error("updateInterviewerReviewStatus:", err);
+    res.status(500).json({ message: "Error updating account review status" });
   }
 };
