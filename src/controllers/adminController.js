@@ -361,6 +361,26 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
       review_status,
       admin_review: adminReview
     });
+    }
+
+
+    // Look the user up first so we can distinguish "no such user"
+    // from "nothing changed". The old code's `user_type: 'regular'`
+    // filter caused a misleading 404 for any other user_type.
+    const targetUser = await User.query().findById(user_id);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (targetUser.review_status === review_status) {
+      return res.json({
+        message: `Account is already ${review_status}`,
+        user_id: targetUser.user_id,
+        review_status
+      });
+    }
+
+    await User.query().findById(user_id).patch({ review_status });
 
     return res.json({
       message:
@@ -370,6 +390,7 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
       user_id: targetUser.user_id,
       review_status,
       admin_review: adminReview
+      review_status
     });
   } catch (err) {
     console.error("updateInterviewerReviewStatus:", err);
