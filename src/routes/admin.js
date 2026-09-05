@@ -16,4 +16,3 @@ router.delete("/admin/users/:user_id", controller.deleteUserAndAssociations);
 
 module.exports = router;
 
-

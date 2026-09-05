@@ -83,6 +83,7 @@ exports.getAllUsers = async (req, res) => {
         "users.is_verified",
         "users.is_interviewer_banned",
         "users.review_status",
+        "users.admin_review",
         "users.created_at",
         "users.updated_at"
       )
@@ -113,6 +114,7 @@ exports.getPendingInterviewers = async (req, res) => {
         "users.is_verified",
         "users.is_interviewer_banned",
         "users.review_status",
+        "users.admin_review",
         "users.created_at",
         "users.updated_at"
       )
@@ -241,7 +243,7 @@ exports.acceptInterviewer = async (req, res) => {
 
     // If this interviewer was involved in mock interviews as a candidate,
     // clear those candidate references to avoid inconsistent associations.
-    
+   
 
     return res.json({ message: "Interviewer accepted successfully" });
   } catch (err) {
@@ -321,6 +323,55 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    if (review_status === "under_review") {
+      const hasActiveInterview = await MockInterview.query()
+        .where("interview_status", "confirmed")
+        .where(function () {
+          this.where("candidate_id", user_id).orWhere("interviewer_id", user_id);
+        })
+        .first();
+
+      if (hasActiveInterview) {
+        return res.status(409).json({
+          message: "Please complete the active interview first."
+        });
+      }
+    }
+
+    const isAdminReview = targetUser.admin_review === true || targetUser.admin_review === 1;
+
+    if (!isAdmin && isAdminReview) {
+      return res.status(403).json({
+        message: "Your account is under admin review and can only be changed by an admin."
+      });
+    }
+
+    const adminReview = isAdmin && review_status === "under_review";
+
+    if (targetUser.review_status === review_status && isAdminReview === adminReview) {
+      return res.json({
+        message: `Account is already ${review_status}`,
+        user_id: targetUser.user_id,
+        review_status,
+        admin_review: isAdminReview
+      });
+    }
+
+    await User.query().findById(user_id).patch({
+      review_status,
+      admin_review: adminReview
+    });
+    }
+
+
+    // Look the user up first so we can distinguish "no such user"
+    // from "nothing changed". The old code's `user_type: 'regular'`
+    // filter caused a misleading 404 for any other user_type.
+    const targetUser = await User.query().findById(user_id);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     if (targetUser.review_status === review_status) {
       return res.json({
         message: `Account is already ${review_status}`,
@@ -337,6 +388,8 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
           ? "Account has been placed under review"
           : "Account has been reactivated",
       user_id: targetUser.user_id,
+      review_status,
+      admin_review: adminReview
       review_status
     });
   } catch (err) {
@@ -344,3 +397,4 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
     res.status(500).json({ message: "Error updating account review status" });
   }
 };
+
