@@ -31,7 +31,7 @@ const sendOtpToEmail = async (email, otp, options = {}) => {
     title = "Bowizzy Email Verification",
     message = "Please use the OTP below to verify your email address for Bowizzy."
   } = options;
-  const mailServiceUrl = "https://bowizzy-mail-service.vercel.app/api/send-email";
+  const mailServiceUrl = "https://bowizzy-mail.vercel.app/api/sendmail";
   const bypassHeader = "clRAc3bjRwnrpqGZgac1fy7zaDUmwp7u";
 
   const htmlContent = `
