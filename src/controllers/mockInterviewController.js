@@ -441,10 +441,13 @@ exports.getAcceptedInterviews = async (req, res) => {
             .where(function () {
                 this.where("candidate_id", currentUserId).orWhere("interviewer_id", currentUserId);
             })
-            .andWhere("interview_status", "confirmed")
+            .whereIn("interview_status", ["confirmed", "completed"])
             .orderBy("created_at", "desc");
 
-        return res.json(acceptedBookings);
+        return res.json(acceptedBookings.map((booking) => ({
+            ...booking,
+            interview_status: booking.candidate_feedback_given ? "completed" : booking.interview_status
+        })));
     } catch (err) {
         console.error("getAcceptedInterviews error:", err);
         return res.status(500).json({ message: "Error fetching accepted interviews" });
@@ -868,6 +871,7 @@ exports.submitCandidateReview = async (req, res) => {
         });
         const markCandidateFeedbacked = await MockInterview.query().patchAndFetchById(data.mock_interview_id, {
             candidate_feedback_given: true,
+            interview_status: "completed",
             updated_at: new Date().toISOString()
         });
 
@@ -919,7 +923,9 @@ exports.submitInterviewerReview = async (req, res) => {
             return res.status(404).json({ message: "Mock interview booking not found" });
         }
 
-
+        if (mockInterview.interview_status !== "confirmed") {
+            return res.status(409).json({ message: "Only confirmed mock interviews can receive feedback" });
+        }
 
         if (mockInterview.candidate_id !== Number(data.candidate_id)) {
             return res.status(400).json({ message: "Candidate ID does not match the booking" });
@@ -953,12 +959,20 @@ exports.submitInterviewerReview = async (req, res) => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         });
-        const markInterviewerFeedbacked = await MockInterview.query().patchAndFetchById(data.mock_interview_id, {
+
+        const updatedBooking = await MockInterview.query().patchAndFetchById(data.mock_interview_id, {
             interviewer_feedback_given: true,
+            interview_status: mockInterview.interview_type === "offline" ? "completed" : mockInterview.interview_status,
             updated_at: new Date().toISOString()
         });
 
-        return res.status(201).json({ message: "Interviewer review submitted successfully", review: newReview });
+        return res.status(201).json({
+            message: mockInterview.interview_type === "offline"
+                ? "Interviewer review submitted successfully and offline interview marked as completed"
+                : "Interviewer review submitted successfully",
+            review: newReview,
+            booking: updatedBooking
+        });
     } catch (err) {
         console.error("submitInterviewerReview error:", err);
         return res.status(500).json({ message: "Error submitting interviewer review" });
