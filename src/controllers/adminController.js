@@ -82,6 +82,8 @@ exports.getAllUsers = async (req, res) => {
         "users.is_interviewer_verified",
         "users.is_verified",
         "users.is_interviewer_banned",
+        "users.interviewer_deactivated_by",
+        "users.interviewer_deactivated_at",
         "users.review_status",
         "users.admin_review",
         "users.created_at",
@@ -113,6 +115,8 @@ exports.getPendingInterviewers = async (req, res) => {
         "users.is_interviewer_verified",
         "users.is_verified",
         "users.is_interviewer_banned",
+        "users.interviewer_deactivated_by",
+        "users.interviewer_deactivated_at",
         "users.review_status",
         "users.admin_review",
         "users.created_at",
@@ -265,16 +269,29 @@ exports.banInterviewer = async (req, res) => {
       return res.status(400).json({ message: "is_banned must be a boolean" });
     }
 
-    const updated = await User.query()
-      .patch({ is_interviewer_banned: is_banned })
+    await User.query()
+      .patch({
+        is_interviewer_banned: is_banned,
+        interviewer_deactivated_by: is_banned ? "admin" : null,
+        interviewer_deactivated_at: is_banned ? new Date().toISOString() : null
+      })
       .where({ user_id, user_type: "regular" });
 
-    if (updated === 0) {
+    const user = await User.query()
+      .select("user_id", "is_interviewer_banned", "interviewer_deactivated_by", "interviewer_deactivated_at")
+      .where({ user_id, user_type: "regular" })
+      .first();
+
+    if (!user) {
       return res.status(404).json({ message: "Interviewer not found or not an interviewer" });
     }
 
     return res.json({
-      message: is_banned ? "Interviewer banned successfully" : "Interviewer unbanned successfully"
+      message: is_banned ? "Interviewer banned successfully" : "Interviewer unbanned successfully",
+      user_id: user.user_id,
+      is_banned: user.is_interviewer_banned === true || user.is_interviewer_banned === "true",
+      deactivated_by: user.interviewer_deactivated_by,
+      deactivated_at: user.interviewer_deactivated_at
     });
   } catch (err) {
     console.error(err);
@@ -376,4 +393,3 @@ exports.updateInterviewerReviewStatus = async (req, res) => {
     res.status(500).json({ message: "Error updating account review status" });
   }
 };
-
