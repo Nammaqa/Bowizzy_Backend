@@ -765,7 +765,7 @@ exports.checkInterviewerBanStatus = async (req, res) => {
         const user_id = req.user.user_id;
 
         const user = await User.query()
-            .select("user_id", "is_interviewer_banned", "review_status", "admin_review")
+            .select("user_id", "is_interviewer_banned", "interviewer_deactivated_by", "review_status", "admin_review")
             .findById(user_id);
 
         if (!user) {
@@ -777,12 +777,79 @@ exports.checkInterviewerBanStatus = async (req, res) => {
         return res.json({
             user_id,
             is_banned: isBanned,
+            deactivated_by: user.interviewer_deactivated_by,
             review_status: user.review_status,
             admin_review: user.admin_review === true || user.admin_review === 1
         });
     } catch (err) {
         console.error("checkInterviewerBanStatus error:", err);
         return res.status(500).json({ message: "Error checking interviewer ban status" });
+    }
+};
+
+exports.updateInterviewerBanStatus = async (req, res) => {
+    try {
+        const user_id = req.user.user_id;
+        const { is_banned } = req.body;
+
+        if (req.user.user_type === "admin" || String(req.params.user_id) !== String(user_id)) {
+            return res.status(403).json({ message: "You can only change your own interviewer ban status" });
+        }
+
+        if (typeof is_banned !== "boolean") {
+            return res.status(400).json({ message: "is_banned must be a boolean" });
+        }
+
+        const updated = await User.query()
+            .patch({
+                is_interviewer_banned: is_banned,
+                interviewer_deactivated_by: is_banned ? "user" : null,
+                interviewer_deactivated_at: is_banned ? new Date().toISOString() : null
+            })
+            .where({ user_id })
+            .where(function () {
+                this.whereNull("interviewer_deactivated_by")
+                    .orWhere("interviewer_deactivated_by", "user");
+            });
+
+        if (updated === 0) {
+            const user = await User.query()
+                .select("user_id", "is_interviewer_banned", "interviewer_deactivated_by", "review_status", "admin_review")
+                .findById(user_id);
+
+            if (!user) {
+                return res.status(404).json({ message: "User not found" });
+            }
+
+            if (user.interviewer_deactivated_by === "admin" && !is_banned) {
+                return res.status(403).json({
+                    message: "Your interviewer account was deactivated by an admin and can only be reactivated by an admin."
+                });
+            }
+
+            return res.json({
+                user_id: user.user_id,
+                is_banned: user.is_interviewer_banned === true || user.is_interviewer_banned === "true",
+                deactivated_by: user.interviewer_deactivated_by,
+                review_status: user.review_status,
+                admin_review: user.admin_review === true || user.admin_review === 1
+            });
+        }
+
+        const user = await User.query()
+            .select("user_id", "is_interviewer_banned", "interviewer_deactivated_by", "review_status", "admin_review")
+            .findById(user_id);
+
+        return res.json({
+            user_id: user.user_id,
+            is_banned: user.is_interviewer_banned === true || user.is_interviewer_banned === "true",
+            deactivated_by: user.interviewer_deactivated_by,
+            review_status: user.review_status,
+            admin_review: user.admin_review === true || user.admin_review === 1
+        });
+    } catch (err) {
+        console.error("updateInterviewerBanStatus error:", err);
+        return res.status(500).json({ message: "Error updating interviewer ban status" });
     }
 };
 

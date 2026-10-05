@@ -25,5 +25,6 @@ router.get("/users/:user_id/mock-interview/interviewer/verification-status", aut
 router.get("/users/:user_id/mock-interview/validate-interviewer", auth, controller.validateInterviewer);
 router.get("/users/:user_id/mock-interview/is-interviewer", auth, controller.isInterviewer);
 router.get("/users/:user_id/mock-interview/interviewer-ban-status", auth, controller.checkInterviewerBanStatus);
+router.patch("/users/:user_id/mock-interview/interviewer-ban-status", auth, controller.updateInterviewerBanStatus);
 
 module.exports = router;
