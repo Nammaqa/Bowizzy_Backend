@@ -952,9 +952,9 @@ exports.submitCandidateReview = async (req, res) => {
 exports.submitInterviewerReview = async (req, res) => {
     try {
         const data = req.body;
-        const interviewer_id = req.user.user_id;
+        const candidate_id = Number(req.user.user_id);
 
-        if (!interviewer_id) {
+        if (!candidate_id) {
             return res.status(403).json({ message: "Invalid user. Access denied" });
         }
 
@@ -990,17 +990,25 @@ exports.submitInterviewerReview = async (req, res) => {
             return res.status(404).json({ message: "Mock interview booking not found" });
         }
 
-        if (mockInterview.interview_status !== "confirmed") {
-            return res.status(409).json({ message: "Only confirmed mock interviews can receive feedback" });
+        if (!["confirmed", "completed"].includes(mockInterview.interview_status)) {
+            return res.status(409).json({ message: "Only confirmed or completed mock interviews can receive feedback" });
         }
 
-        if (mockInterview.candidate_id !== Number(data.candidate_id)) {
+        if (Number(mockInterview.candidate_id) !== candidate_id) {
+            return res.status(403).json({ message: "Only the candidate for this booking can submit feedback" });
+        }
+
+        if (Number(mockInterview.candidate_id) !== Number(data.candidate_id)) {
             return res.status(400).json({ message: "Candidate ID does not match the booking" });
+        }
+
+        if (!mockInterview.interviewer_id) {
+            return res.status(409).json({ message: "This booking does not have an assigned interviewer" });
         }
 
         const existingReview = await MockInterviewInterviewerReview
             .query()
-            .findOne({ mock_interview_id: data.mock_interview_id, interviewer_id });
+            .findOne({ mock_interview_id: data.mock_interview_id, interviewer_id: mockInterview.interviewer_id });
 
         if (existingReview) {
             return res.status(409).json({ message: "Interviewer review already exists for this mock interview" });
@@ -1008,8 +1016,8 @@ exports.submitInterviewerReview = async (req, res) => {
 
         const newReview = await MockInterviewInterviewerReview.query().insert({
             mock_interview_id: data.mock_interview_id,
-            candidate_id: Number(data.candidate_id),
-            interviewer_id: Number(interviewer_id),
+            candidate_id,
+            interviewer_id: Number(mockInterview.interviewer_id),
             professionalism_conduct: data.professionalism_conduct,
             clarity_of_questions: data.clarity_of_questions,
             knowledge_of_role: data.knowledge_of_role,
